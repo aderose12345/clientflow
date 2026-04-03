@@ -10,7 +10,15 @@ export async function GET() {
   const email = user?.emailAddresses[0]?.emailAddress?.toLowerCase();
   if (!email) return NextResponse.json({ error: "No email found" }, { status: 400 });
 
-  // Check if this email exists as a client in any workspace
+  // First check: does this Clerk user OWN a workspace? If so, they're an owner.
+  const workspace = await prisma.workspace.findUnique({
+    where: { clerkUserId: userId },
+  });
+  if (workspace) {
+    return NextResponse.json({ role: "owner" });
+  }
+
+  // Second check: is this email in the Client table? If so, they're a client.
   const client = await prisma.client.findFirst({
     where: { email },
     include: {
@@ -29,5 +37,6 @@ export async function GET() {
     });
   }
 
+  // Neither — new user, treat as owner (will go through onboarding)
   return NextResponse.json({ role: "owner" });
 }

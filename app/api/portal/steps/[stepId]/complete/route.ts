@@ -105,10 +105,10 @@ export async function POST(
     });
   }
 
-  // Update last activity
+  // Update last activity and mark as on_track (active client)
   await prisma.client.update({
     where: { id: client.id },
-    data: { lastActivityAt: new Date() },
+    data: { lastActivityAt: new Date(), status: "on_track" },
   });
 
   // Log activity

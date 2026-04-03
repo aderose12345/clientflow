@@ -30,7 +30,7 @@ export async function sendClientInvite({
   const resend = new Resend(process.env.RESEND_API_KEY);
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const inviteUrl = `${appUrl}/sign-up?redirect_url=/portal`;
+  const inviteUrl = `${appUrl}/sign-up?redirect_url=/portal&email=${encodeURIComponent(toEmail)}`;
 
   console.log("[email] Sending invite email to:", toEmail, "with inviteUrl:", inviteUrl);
 
