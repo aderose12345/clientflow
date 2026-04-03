@@ -64,9 +64,12 @@ export async function POST(req: NextRequest) {
 
     const coachName = user?.fullName ?? coachEmail;
     console.log("[clients/POST] Client created, sending invite email to:", client.email);
+    console.log("[clients/POST] coachName:", coachName, "businessName:", workspace.businessName, "programName:", client.program?.name);
 
+    let emailResult: unknown = null;
+    let emailError: string | null = null;
     try {
-      const emailResult = await sendClientInvite({
+      emailResult = await sendClientInvite({
         toEmail: client.email,
         toName: `${client.firstName} ${client.lastName}`,
         coachName,
@@ -75,11 +78,11 @@ export async function POST(req: NextRequest) {
       });
       console.log("[clients/POST] Email result:", JSON.stringify(emailResult));
     } catch (emailErr) {
+      emailError = String(emailErr);
       console.error("[clients/POST] Email send failed:", emailErr);
-      // Don't block client creation if email fails
     }
 
-    return NextResponse.json({ client }, { status: 201 });
+    return NextResponse.json({ client, _email: { result: emailResult, error: emailError } }, { status: 201 });
   } catch (err: unknown) {
     if (
       typeof err === "object" &&
