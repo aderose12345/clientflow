@@ -10,9 +10,9 @@ export async function GET() {
   const email = user?.emailAddresses[0]?.emailAddress;
   if (!email) return NextResponse.json({ error: "No email on account" }, { status: 400 });
 
-  // Find the client record by email (portal users are identified by email, not workspace)
+  // Find the client record by clerkUserId or email
   const client = await prisma.client.findFirst({
-    where: { email: email.toLowerCase() },
+    where: { OR: [{ clerkUserId: userId }, { email: email.toLowerCase() }] },
     include: {
       workspace: { select: { businessName: true, brandColor: true, logoUrl: true, hideBranding: true, portalWelcomeMessage: true, portalPrimaryColor: true, supportEmail: true } },
       program: {

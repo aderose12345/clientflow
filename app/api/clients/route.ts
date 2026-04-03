@@ -1,4 +1,5 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateWorkspace } from "@/lib/workspace";
@@ -47,6 +48,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const inviteToken = randomUUID();
     const client = await prisma.client.create({
       data: {
         workspaceId: workspace.id,
@@ -58,6 +60,7 @@ export async function POST(req: NextRequest) {
         assignedTo: assignedTo?.trim() || null,
         programId: resolvedProgramId,
         status: "on_track",
+        inviteToken,
         invitedAt: new Date(),
       },
       include: { program: { select: { id: true, name: true } } },
@@ -81,6 +84,7 @@ export async function POST(req: NextRequest) {
         coachName,
         businessName: workspace.businessName,
         programName: client.program?.name,
+        inviteToken,
       });
       console.log("[clients/POST] Email result:", JSON.stringify(emailResult));
     } catch (emailErr) {

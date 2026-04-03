@@ -44,6 +44,10 @@ model Client {
   status               String    @default("on_track")
   programId            String?
   program              Program?  @relation(fields: [programId], references: [id])
+  inviteToken          String?   @unique
+  inviteAccepted       Boolean   @default(false)
+  inviteAcceptedAt     DateTime?
+  clerkUserId          String?
   invitedAt            DateTime?
   lastActivityAt       DateTime?
   createdAt            DateTime  @default(now())

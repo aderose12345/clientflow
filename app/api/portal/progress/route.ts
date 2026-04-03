@@ -11,7 +11,7 @@ export async function GET() {
   if (!email) return NextResponse.json({ error: "No email" }, { status: 400 });
 
   const client = await prisma.client.findFirst({
-    where: { email },
+    where: { OR: [{ clerkUserId: userId }, { email }] },
     include: {
       program: {
         include: {

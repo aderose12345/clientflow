@@ -4,33 +4,27 @@ export async function sendClientInvite({
   coachName,
   businessName,
   programName,
+  inviteToken,
 }: {
   toEmail: string;
   toName: string;
   coachName: string;
   businessName: string;
   programName?: string;
+  inviteToken?: string;
 }) {
-  console.log("[email] sendClientInvite called with:", {
-    toEmail,
-    toName,
-    coachName,
-    businessName,
-    programName,
-  });
-
   if (!process.env.RESEND_API_KEY) {
     console.error("[email] RESEND_API_KEY is NOT set — email will NOT be sent");
     return { success: false, error: "RESEND_API_KEY not configured" };
   }
 
-  console.log("[email] RESEND_API_KEY is set, length:", process.env.RESEND_API_KEY.length);
-
   const { Resend } = await import("resend");
   const resend = new Resend(process.env.RESEND_API_KEY);
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const inviteUrl = `${appUrl}/sign-up?redirect_url=/portal&email=${encodeURIComponent(toEmail)}`;
+  const inviteUrl = inviteToken
+    ? `${appUrl}/accept-invite?token=${inviteToken}`
+    : `${appUrl}/sign-up?redirect_url=/portal`;
 
   console.log("[email] Sending invite email to:", toEmail, "with inviteUrl:", inviteUrl);
 

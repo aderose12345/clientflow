@@ -30,7 +30,12 @@
       "Bash(mkdir -p \"C:/Users/adero/Desktop/clientflow/app/api/programs/[id]/duplicate\")",
       "Bash(gh api:*)",
       "Bash(npx vercel-build:*)",
-      "WebFetch(domain:resend.com)"
+      "WebFetch(domain:resend.com)",
+      "Bash(printf 'clientflow-cron-2024')",
+      "Bash(sed -i 's|NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard|NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/|' .env)",
+      "Bash(sed -i 's|NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/onboarding|NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/|' .env)",
+      "Bash(printf '/')",
+      "Bash(npm ls:*)"
     ]
   }
 }
