@@ -22,6 +22,13 @@ const STEP_ICON: Record<string, string> = {
   intake_form: "📝", agreement: "✍️", task: "✅", milestone: "🏆", checkin: "📊", resource: "📁",
 };
 
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 export default function PortalPage() {
   const { signOut } = useClerk();
   const router = useRouter();
@@ -48,6 +55,13 @@ export default function PortalPage() {
 
   useEffect(() => { fetchClient(); }, [fetchClient]);
 
+  // Auto-select the first check-in template when program loads
+  useEffect(() => {
+    if (client?.program?.checkInTemplates?.length && !activeTemplate) {
+      setActiveTemplate(client.program.checkInTemplates[0]);
+    }
+  }, [client, activeTemplate]);
+
   async function completeTask(taskId: string) {
     setCompletingId(taskId);
     await fetch(`/api/portal/tasks/${taskId}/complete`, { method: "POST" });
@@ -71,31 +85,48 @@ export default function PortalPage() {
 
   const accent = client?.workspace?.brandColor ?? "#C8F04A";
 
+  // ─── Loading ──────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0F0F0F" }}>
         <div style={{ textAlign: "center" }}>
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: "#C8F04A", margin: "0 auto 16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ fontWeight: 900, color: "#0F0F0F", fontSize: 20 }}>C</span>
+          <div style={{
+            width: 48, height: 48, borderRadius: 12, background: "#C8F04A",
+            margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <span style={{ fontWeight: 900, color: "#0F0F0F", fontSize: 22 }}>C</span>
           </div>
-          <div style={{ color: "#606060", fontSize: 14 }}>Loading your portal...</div>
+          <div style={{ color: "#A0A0A0", fontSize: 14, marginBottom: 8 }}>Loading your portal...</div>
+          <div style={{ width: 120, height: 3, background: "#1E1E1E", borderRadius: 99, margin: "0 auto", overflow: "hidden" }}>
+            <div style={{
+              width: "40%", height: "100%", background: "#C8F04A", borderRadius: 99,
+              animation: "shimmer 1.2s ease-in-out infinite alternate",
+            }} />
+          </div>
+          <style>{`@keyframes shimmer { from { transform: translateX(0); } to { transform: translateX(150%); } }`}</style>
         </div>
       </div>
     );
   }
 
+  // ─── Not found ────────────────────────────────────────────────────────────
   if (notFound) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center", maxWidth: 400 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
-          <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>No portal found</h2>
-          <p style={{ color: "#A0A0A0", marginBottom: 24 }}>
-            Your account doesn&apos;t have a client record yet. If you received an invitation, make sure you&apos;re signing in with the same email it was sent to.
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0F0F0F" }}>
+        <div style={{ textAlign: "center", maxWidth: 420, padding: "0 24px" }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: 16, background: "#161616", border: "1px solid #2A2A2A",
+            margin: "0 auto 24px", display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <span style={{ fontSize: 28 }}>🔍</span>
+          </div>
+          <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8, color: "#F0F0F0" }}>No portal found</h2>
+          <p style={{ color: "#A0A0A0", marginBottom: 28, lineHeight: 1.6, fontSize: 14 }}>
+            Your account doesn&apos;t have a client record yet. Make sure you&apos;re signing in with the same email your invitation was sent to.
           </p>
           <button onClick={() => signOut(() => router.push("/sign-in"))} style={{
             background: "#C8F04A", color: "#0F0F0F", fontWeight: 600,
-            padding: "10px 24px", borderRadius: 8, border: "none", cursor: "pointer",
+            padding: "11px 28px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14,
           }}>
             Sign Out
           </button>
@@ -111,81 +142,128 @@ export default function PortalPage() {
   const pending  = tasks.filter(t => t.status !== "complete");
   const done     = tasks.filter(t => t.status === "complete");
   const completedMilestoneIds = new Set(client.milestoneCompletions.map(mc => mc.milestoneId));
+  const totalMilestones = program?.milestones?.length ?? 0;
+  const completedMilestones = program?.milestones?.filter(m => completedMilestoneIds.has(m.id)).length ?? 0;
   const recentSubmission = activeTemplate
     ? client.checkInSubmissions.find(s => s.templateId === activeTemplate.id)
     : null;
 
   const TABS = [
-    { id: "overview", label: "Program" },
-    { id: "tasks",    label: `Tasks${pending.length > 0 ? ` (${pending.length})` : ""}` },
-    { id: "checkin",  label: "Check-In" },
-  ] as const;
+    { id: "overview" as const, label: "Program" },
+    { id: "tasks" as const,    label: `Tasks${pending.length > 0 ? ` (${pending.length})` : ""}` },
+    { id: "checkin" as const,  label: "Check-In" },
+  ];
 
   return (
-    <div style={{ minHeight: "100vh" }}>
-      {/* Top bar */}
+    <div style={{ minHeight: "100vh", background: "#0F0F0F" }}>
+      {/* ── Header ── */}
       <header style={{
         background: "#161616", borderBottom: "1px solid #2A2A2A",
-        padding: "0 32px", height: 60, display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "0 24px", height: 64, display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ fontWeight: 900, color: "#0F0F0F", fontSize: 16 }}>C</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 10, background: accent,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: `0 0 0 1px rgba(0,0,0,0.1)`,
+          }}>
+            <span style={{ fontWeight: 900, color: "#0F0F0F", fontSize: 18 }}>
+              {client.workspace.businessName.charAt(0).toUpperCase()}
+            </span>
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{client.workspace.businessName}</div>
-            <div style={{ fontSize: 11, color: "#606060" }}>Client Portal</div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: "#F0F0F0", letterSpacing: "-0.01em" }}>{client.workspace.businessName}</div>
+            <div style={{ fontSize: 11, color: "#505050", letterSpacing: "0.06em", textTransform: "uppercase" }}>Client Portal</div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <span style={{ fontSize: 13, color: "#A0A0A0" }}>{client.firstName} {client.lastName}</span>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: "#F0F0F0" }}>{client.firstName} {client.lastName}</div>
+            <div style={{ fontSize: 11, color: "#505050" }}>{client.email}</div>
+          </div>
           <button onClick={() => signOut(() => router.push("/sign-in"))} style={{
             background: "transparent", border: "1px solid #2A2A2A", color: "#606060",
-            padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontSize: 12,
-          }}>Sign out</button>
+            padding: "7px 16px", borderRadius: 8, cursor: "pointer", fontSize: 12,
+            transition: "all 0.15s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = "#3A3A3A"; e.currentTarget.style.color = "#A0A0A0"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = "#2A2A2A"; e.currentTarget.style.color = "#606060"; }}
+          >Sign out</button>
         </div>
       </header>
 
-      <div style={{ maxWidth: 820, margin: "0 auto", padding: "32px 24px" }}>
-        {/* Welcome */}
-        <div style={{ marginBottom: 28 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 400, marginBottom: 4 }}>
-            Welcome back, {client.firstName} 👋
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: "40px 24px 80px" }}>
+        {/* ── Welcome + Summary ── */}
+        <div style={{ marginBottom: 32 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 300, marginBottom: 8, color: "#F0F0F0", letterSpacing: "-0.02em" }}>
+            {greeting()}, <span style={{ fontWeight: 600 }}>{client.firstName}</span>
           </h1>
-          {program && (
-            <p style={{ color: "#A0A0A0", margin: 0 }}>
+          {program ? (
+            <p style={{ color: "#A0A0A0", margin: 0, fontSize: 15, lineHeight: 1.5 }}>
               You&apos;re enrolled in <strong style={{ color: "#F0F0F0" }}>{program.name}</strong>
-              {program.duration ? ` · ${program.duration}` : ""}
+              {program.duration ? <span style={{ color: "#505050" }}> &middot; {program.duration}</span> : ""}
             </p>
+          ) : (
+            <p style={{ color: "#606060", margin: 0, fontSize: 15 }}>Your coach will assign you to a program soon.</p>
           )}
         </div>
 
-        {/* Progress bar (tasks) */}
-        {tasks.length > 0 && (
-          <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: "16px 20px", marginBottom: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>Task Progress</span>
-              <span style={{ fontSize: 13, color: "#A0A0A0" }}>{done.length}/{tasks.length} completed</span>
+        {/* ── Stats cards ── */}
+        {(tasks.length > 0 || totalMilestones > 0) && (
+          <div style={{ display: "grid", gridTemplateColumns: totalMilestones > 0 ? "1fr 1fr 1fr" : "1fr 1fr", gap: 14, marginBottom: 32 }}>
+            <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 14, padding: "18px 22px" }}>
+              <div style={{ color: "#505050", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 600 }}>Tasks Done</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <span style={{ fontSize: 30, fontWeight: 300, color: "#F0F0F0", letterSpacing: "-0.02em" }}>{done.length}</span>
+                <span style={{ fontSize: 14, color: "#505050" }}>/ {tasks.length}</span>
+              </div>
+              <div style={{ height: 3, background: "#1E1E1E", borderRadius: 99, marginTop: 12 }}>
+                <div style={{ height: 3, borderRadius: 99, background: accent, width: `${tasks.length > 0 ? (done.length / tasks.length) * 100 : 0}%`, transition: "width 0.6s ease" }} />
+              </div>
             </div>
-            <div style={{ height: 6, background: "#2A2A2A", borderRadius: 99 }}>
-              <div style={{
-                height: 6, borderRadius: 99, background: accent,
-                width: `${tasks.length > 0 ? (done.length / tasks.length) * 100 : 0}%`,
-                transition: "width 0.6s ease",
-              }} />
+            {totalMilestones > 0 && (
+              <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 14, padding: "18px 22px" }}>
+                <div style={{ color: "#505050", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 600 }}>Milestones</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                  <span style={{ fontSize: 30, fontWeight: 300, color: "#F0F0F0", letterSpacing: "-0.02em" }}>{completedMilestones}</span>
+                  <span style={{ fontSize: 14, color: "#505050" }}>/ {totalMilestones}</span>
+                </div>
+                <div style={{ height: 3, background: "#1E1E1E", borderRadius: 99, marginTop: 12 }}>
+                  <div style={{ height: 3, borderRadius: 99, background: "#F0A94A", width: `${totalMilestones > 0 ? (completedMilestones / totalMilestones) * 100 : 0}%`, transition: "width 0.6s ease" }} />
+                </div>
+              </div>
+            )}
+            <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 14, padding: "18px 22px" }}>
+              <div style={{ color: "#505050", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 600 }}>Check-Ins</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <span style={{ fontSize: 30, fontWeight: 300, color: "#F0F0F0", letterSpacing: "-0.02em" }}>{client.checkInSubmissions.length}</span>
+                <span style={{ fontSize: 14, color: "#505050" }}>submitted</span>
+              </div>
+              <div style={{ fontSize: 11, color: "#505050", marginTop: 12 }}>
+                {recentSubmission
+                  ? `Last: ${new Date(recentSubmission.submittedAt).toLocaleDateString()}`
+                  : "No submissions yet"}
+              </div>
             </div>
           </div>
         )}
 
-        {/* Tabs */}
-        <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "#161616", padding: 4, borderRadius: 10, width: "fit-content", border: "1px solid #2A2A2A" }}>
+        {/* ── Tabs ── */}
+        <div style={{
+          display: "flex", gap: 0, marginBottom: 32, borderBottom: "1px solid #2A2A2A",
+        }}>
           {TABS.map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSubmitted(false); }} style={{
-              padding: "7px 18px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500,
-              background: activeTab === tab.id ? accent : "transparent",
-              color: activeTab === tab.id ? "#0F0F0F" : "#A0A0A0",
-              transition: "all 0.15s",
-            }}>{tab.label}</button>
+              padding: "13px 22px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500,
+              background: "transparent", letterSpacing: "-0.01em",
+              color: activeTab === tab.id ? accent : "#505050",
+              borderBottom: activeTab === tab.id ? `2px solid ${accent}` : "2px solid transparent",
+              marginBottom: -1,
+              transition: "all 0.2s",
+            }}
+            onMouseEnter={e => { if (activeTab !== tab.id) e.currentTarget.style.color = "#808080"; }}
+            onMouseLeave={e => { if (activeTab !== tab.id) e.currentTarget.style.color = "#505050"; }}
+            >{tab.label}</button>
           ))}
         </div>
 
@@ -193,35 +271,56 @@ export default function PortalPage() {
         {activeTab === "overview" && (
           <div>
             {!program ? (
-              <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 48, textAlign: "center" }}>
-                <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>No program assigned yet</div>
-                <div style={{ color: "#A0A0A0" }}>Your coach will assign you to a program soon.</div>
+              <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 56, textAlign: "center" }}>
+                <div style={{
+                  width: 56, height: 56, borderRadius: 14, background: "#1A1A1A", border: "1px solid #2A2A2A",
+                  margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <span style={{ fontSize: 26 }}>📋</span>
+                </div>
+                <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 16, color: "#F0F0F0" }}>No program assigned yet</div>
+                <div style={{ color: "#A0A0A0", fontSize: 14 }}>Your coach will assign you to a program soon. Sit tight!</div>
               </div>
             ) : (
-              <div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* Description */}
                 {program.description && (
-                  <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 20, marginBottom: 16 }}>
-                    <p style={{ color: "#A0A0A0", margin: 0, fontSize: 14, lineHeight: 1.6 }}>{program.description}</p>
+                  <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: "20px 24px" }}>
+                    <div style={{ fontSize: 12, color: "#606060", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>About This Program</div>
+                    <p style={{ color: "#A0A0A0", margin: 0, fontSize: 14, lineHeight: 1.7 }}>{program.description}</p>
                   </div>
                 )}
 
+                {/* Steps roadmap */}
                 {program.steps.length > 0 && (
                   <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 24 }}>
-                    <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 20 }}>Program Roadmap</div>
+                    <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 20, color: "#F0F0F0" }}>
+                      Program Roadmap
+                      <span style={{ color: "#606060", fontWeight: 400, fontSize: 13, marginLeft: 8 }}>({program.steps.length} steps)</span>
+                    </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                       {program.steps.map((step, i) => (
                         <div key={step.id} style={{
-                          display: "flex", alignItems: "center", gap: 14, padding: "12px 14px",
-                          borderRadius: 8, background: i % 2 === 0 ? "#1A1A1A" : "transparent",
+                          display: "flex", alignItems: "center", gap: 14, padding: "14px 16px",
+                          borderRadius: 10, background: i % 2 === 0 ? "#1A1A1A" : "transparent",
+                          transition: "background 0.1s",
                         }}>
-                          <div style={{ color: "#606060", fontSize: 12, fontWeight: 600, width: 20, textAlign: "center" }}>{step.position}</div>
-                          <div style={{ fontSize: 18 }}>{STEP_ICON[step.type] ?? "📌"}</div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 13, fontWeight: 500 }}>{step.title}</div>
-                            {step.description && <div style={{ fontSize: 12, color: "#606060", marginTop: 1 }}>{step.description}</div>}
+                          <div style={{
+                            width: 28, height: 28, borderRadius: 8, background: "rgba(200,240,74,0.06)",
+                            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                            border: "1px solid rgba(200,240,74,0.1)",
+                          }}>
+                            <span style={{ fontSize: 13 }}>{STEP_ICON[step.type] ?? "📌"}</span>
                           </div>
-                          <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 99, background: "rgba(200,240,74,0.08)", color: "#C8F04A", textTransform: "uppercase" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 500, color: "#F0F0F0" }}>{step.title}</div>
+                            {step.description && <div style={{ fontSize: 12, color: "#606060", marginTop: 2 }}>{step.description}</div>}
+                          </div>
+                          <span style={{
+                            fontSize: 10, fontWeight: 600, padding: "3px 10px", borderRadius: 99,
+                            background: "rgba(200,240,74,0.06)", color: accent,
+                            textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0,
+                          }}>
                             {STEP_TYPES.find(t => t.value === step.type)?.label ?? step.type}
                           </span>
                         </div>
@@ -230,32 +329,48 @@ export default function PortalPage() {
                   </div>
                 )}
 
+                {/* Milestones */}
                 {program.milestones.length > 0 && (
-                  <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 24, marginTop: 16 }}>
-                    <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 16 }}>Milestones</div>
+                  <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 24 }}>
+                    <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 16, color: "#F0F0F0" }}>
+                      Milestones
+                      <span style={{ color: "#606060", fontWeight: 400, fontSize: 13, marginLeft: 8 }}>
+                        ({completedMilestones}/{totalMilestones})
+                      </span>
+                    </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {program.milestones.map(m => {
                         const isComplete = completedMilestoneIds.has(m.id);
                         return (
                           <div key={m.id} style={{
-                            display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
-                            borderRadius: 8, background: "#1A1A1A",
-                            opacity: isComplete ? 0.6 : 1,
+                            display: "flex", alignItems: "center", gap: 14, padding: "12px 16px",
+                            borderRadius: 10, background: "#1A1A1A",
+                            transition: "opacity 0.2s",
                           }}>
                             <div style={{
-                              width: 22, height: 22, borderRadius: "50%",
-                              background: isComplete ? accent : "#2A2A2A",
+                              width: 24, height: 24, borderRadius: "50%",
+                              background: isComplete ? accent : "transparent",
                               border: `2px solid ${isComplete ? accent : "#3A3A3A"}`,
                               display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                              transition: "all 0.2s",
                             }}>
                               {isComplete && <span style={{ color: "#0F0F0F", fontSize: 12, fontWeight: 900 }}>✓</span>}
                             </div>
                             <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 13, fontWeight: 500, textDecoration: isComplete ? "line-through" : "none", color: isComplete ? "#606060" : "#F0F0F0" }}>
-                                🏆 {m.title}
+                              <div style={{
+                                fontSize: 14, fontWeight: 500,
+                                color: isComplete ? "#606060" : "#F0F0F0",
+                                textDecoration: isComplete ? "line-through" : "none",
+                              }}>
+                                {m.title}
                               </div>
-                              {m.description && <div style={{ fontSize: 12, color: "#606060", marginTop: 1 }}>{m.description}</div>}
+                              {m.description && <div style={{ fontSize: 12, color: "#606060", marginTop: 2 }}>{m.description}</div>}
                             </div>
+                            {isComplete && (
+                              <span style={{ fontSize: 10, fontWeight: 600, color: accent, padding: "2px 8px", borderRadius: 99, background: "rgba(200,240,74,0.08)" }}>
+                                Done
+                              </span>
+                            )}
                           </div>
                         );
                       })}
@@ -271,70 +386,101 @@ export default function PortalPage() {
         {activeTab === "tasks" && (
           <div>
             {tasks.length === 0 ? (
-              <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 48, textAlign: "center" }}>
-                <div style={{ fontSize: 32, marginBottom: 12 }}>✅</div>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>No tasks yet</div>
-                <div style={{ color: "#A0A0A0" }}>Your coach will assign tasks to you soon.</div>
+              <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 56, textAlign: "center" }}>
+                <div style={{
+                  width: 56, height: 56, borderRadius: 14, background: "#1A1A1A", border: "1px solid #2A2A2A",
+                  margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <span style={{ fontSize: 26 }}>✅</span>
+                </div>
+                <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 16, color: "#F0F0F0" }}>No tasks assigned yet</div>
+                <div style={{ color: "#A0A0A0", fontSize: 14 }}>Your coach will assign tasks to you as you progress.</div>
               </div>
             ) : (
-              <div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 {pending.length > 0 && (
-                  <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 24, marginBottom: 16 }}>
-                    <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 16 }}>To Do ({pending.length})</div>
+                  <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 24 }}>
+                    <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 16, color: "#F0F0F0" }}>
+                      To Do
+                      <span style={{ color: "#606060", fontWeight: 400, fontSize: 13, marginLeft: 8 }}>({pending.length})</span>
+                    </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {pending.map(t => (
-                        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 8, background: "#1A1A1A" }}>
-                          <button
-                            onClick={() => completeTask(t.id)}
-                            disabled={completingId === t.id}
-                            style={{
-                              width: 22, height: 22, borderRadius: 6, border: "2px solid #3A3A3A",
-                              background: "transparent", cursor: "pointer", flexShrink: 0,
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              opacity: completingId === t.id ? 0.5 : 1,
-                            }}
-                          >
-                            {completingId === t.id && <span style={{ color: "#606060", fontSize: 10 }}>…</span>}
-                          </button>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 14, fontWeight: 500 }}>{t.title}</div>
-                            {t.description && <div style={{ fontSize: 12, color: "#A0A0A0", marginTop: 2 }}>{t.description}</div>}
-                            {t.dueDate && (
-                              <div style={{ fontSize: 11, color: "#606060", marginTop: 3 }}>
-                                Due {new Date(t.dueDate).toLocaleDateString()}
-                              </div>
-                            )}
+                      {pending.map(t => {
+                        const isOverdue = t.dueDate && new Date(t.dueDate) < new Date();
+                        return (
+                          <div key={t.id} style={{
+                            display: "flex", alignItems: "center", gap: 14, padding: "14px 16px",
+                            borderRadius: 10, background: "#1A1A1A",
+                            border: isOverdue ? "1px solid rgba(255,107,107,0.2)" : "1px solid transparent",
+                          }}>
+                            <button
+                              onClick={() => completeTask(t.id)}
+                              disabled={completingId === t.id}
+                              style={{
+                                width: 24, height: 24, borderRadius: 7, border: "2px solid #3A3A3A",
+                                background: "transparent", cursor: "pointer", flexShrink: 0,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                opacity: completingId === t.id ? 0.5 : 1, transition: "all 0.15s",
+                              }}
+                            >
+                              {completingId === t.id && <span style={{ color: "#606060", fontSize: 10 }}>…</span>}
+                            </button>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 14, fontWeight: 500, color: "#F0F0F0" }}>{t.title}</div>
+                              {t.description && <div style={{ fontSize: 12, color: "#A0A0A0", marginTop: 3 }}>{t.description}</div>}
+                              {t.dueDate && (
+                                <div style={{ fontSize: 11, marginTop: 4, color: isOverdue ? "#FF6B6B" : "#606060" }}>
+                                  {isOverdue ? "Overdue — " : "Due "}
+                                  {new Date(t.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => completeTask(t.id)}
+                              disabled={completingId === t.id}
+                              style={{
+                                background: accent, color: "#0F0F0F", fontWeight: 600,
+                                padding: "7px 18px", borderRadius: 8, border: "none",
+                                cursor: completingId === t.id ? "not-allowed" : "pointer",
+                                fontSize: 12, opacity: completingId === t.id ? 0.7 : 1,
+                                transition: "all 0.15s", flexShrink: 0,
+                                letterSpacing: "0.01em",
+                              }}
+                              onMouseEnter={e => { if (completingId !== t.id) e.currentTarget.style.opacity = "0.85"; }}
+                              onMouseLeave={e => { if (completingId !== t.id) e.currentTarget.style.opacity = "1"; }}
+                            >
+                              Complete
+                            </button>
                           </div>
-                          <button
-                            onClick={() => completeTask(t.id)}
-                            disabled={completingId === t.id}
-                            style={{
-                              background: accent, color: "#0F0F0F", fontWeight: 600,
-                              padding: "6px 14px", borderRadius: 6, border: "none",
-                              cursor: "pointer", fontSize: 12, opacity: completingId === t.id ? 0.7 : 1,
-                            }}
-                          >
-                            Mark Complete
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
 
                 {done.length > 0 && (
                   <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 24 }}>
-                    <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 16, color: "#606060" }}>Completed ({done.length})</div>
+                    <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 16, color: "#606060" }}>
+                      Completed
+                      <span style={{ fontWeight: 400, fontSize: 13, marginLeft: 8 }}>({done.length})</span>
+                    </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {done.map(t => (
-                        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 8, opacity: 0.5 }}>
+                        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 16px", borderRadius: 10, opacity: 0.5 }}>
                           <div style={{
-                            width: 22, height: 22, borderRadius: 6, background: accent,
+                            width: 24, height: 24, borderRadius: 7, background: accent,
                             border: `2px solid ${accent}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                           }}>
                             <span style={{ color: "#0F0F0F", fontSize: 12, fontWeight: 900 }}>✓</span>
                           </div>
-                          <div style={{ fontSize: 14, textDecoration: "line-through", color: "#606060" }}>{t.title}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 14, textDecoration: "line-through", color: "#606060" }}>{t.title}</div>
+                          </div>
+                          {t.completedAt && (
+                            <span style={{ fontSize: 11, color: "#3A3A3A" }}>
+                              {new Date(t.completedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                            </span>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -349,55 +495,58 @@ export default function PortalPage() {
         {activeTab === "checkin" && (
           <div>
             {!program || program.checkInTemplates.length === 0 ? (
-              <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 48, textAlign: "center" }}>
-                <div style={{ fontSize: 32, marginBottom: 12 }}>📊</div>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>No check-ins configured</div>
-                <div style={{ color: "#A0A0A0" }}>Your coach will set up check-in forms for your program.</div>
+              <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 56, textAlign: "center" }}>
+                <div style={{
+                  width: 56, height: 56, borderRadius: 14, background: "#1A1A1A", border: "1px solid #2A2A2A",
+                  margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <span style={{ fontSize: 26 }}>📊</span>
+                </div>
+                <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 16, color: "#F0F0F0" }}>No check-ins configured</div>
+                <div style={{ color: "#A0A0A0", fontSize: 14 }}>Your coach will set up check-in forms for your program.</div>
               </div>
             ) : (
               <div>
-                {/* Template selector */}
+                {/* Template selector (if more than one) */}
                 {program.checkInTemplates.length > 1 && (
                   <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
                     {program.checkInTemplates.map(t => (
                       <button key={t.id} onClick={() => { setActiveTemplate(t); setSubmitted(false); setAnswers({}); }} style={{
-                        padding: "7px 16px", borderRadius: 8, border: "1px solid",
+                        padding: "8px 18px", borderRadius: 8, border: "1px solid",
                         borderColor: activeTemplate?.id === t.id ? accent : "#2A2A2A",
                         background: activeTemplate?.id === t.id ? "rgba(200,240,74,0.08)" : "transparent",
                         color: activeTemplate?.id === t.id ? accent : "#A0A0A0",
-                        cursor: "pointer", fontSize: 13,
+                        cursor: "pointer", fontSize: 13, fontWeight: 500, transition: "all 0.15s",
                       }}>{t.name}</button>
                     ))}
                   </div>
                 )}
 
-                {/* Auto-select first template */}
-                {!activeTemplate && program.checkInTemplates.length > 0 && (
-                  <div>
-                    {(() => { if (!activeTemplate) setTimeout(() => setActiveTemplate(program.checkInTemplates[0]), 0); return null; })()}
-                  </div>
-                )}
-
                 {activeTemplate && (
-                  <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 24 }}>
-                    <div style={{ marginBottom: 20 }}>
-                      <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{activeTemplate.name}</div>
-                      <div style={{ fontSize: 12, color: "#606060" }}>{activeTemplate.frequency} check-in</div>
-                      {recentSubmission && (
-                        <div style={{ marginTop: 8, fontSize: 12, color: "#A0A0A0" }}>
-                          Last submitted: {new Date(recentSubmission.submittedAt).toLocaleDateString()}
-                        </div>
-                      )}
+                  <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 28 }}>
+                    <div style={{ marginBottom: 24 }}>
+                      <div style={{ fontWeight: 600, fontSize: 17, marginBottom: 4, color: "#F0F0F0" }}>{activeTemplate.name}</div>
+                      <div style={{ fontSize: 13, color: "#606060" }}>
+                        {activeTemplate.frequency.charAt(0).toUpperCase() + activeTemplate.frequency.slice(1)} check-in
+                        {recentSubmission && (
+                          <span> · Last submitted {new Date(recentSubmission.submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                        )}
+                      </div>
                     </div>
 
                     {submitted ? (
-                      <div style={{ textAlign: "center", padding: "32px 0" }}>
-                        <div style={{ fontSize: 40, marginBottom: 12 }}>🎉</div>
-                        <div style={{ fontWeight: 600, marginBottom: 8 }}>Check-in submitted!</div>
-                        <div style={{ color: "#A0A0A0", marginBottom: 20 }}>Your coach has been notified.</div>
+                      <div style={{ textAlign: "center", padding: "40px 0" }}>
+                        <div style={{
+                          width: 64, height: 64, borderRadius: 16, background: "rgba(200,240,74,0.1)",
+                          margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          <span style={{ fontSize: 32 }}>🎉</span>
+                        </div>
+                        <div style={{ fontWeight: 600, fontSize: 18, marginBottom: 8, color: "#F0F0F0" }}>Check-in submitted!</div>
+                        <div style={{ color: "#A0A0A0", marginBottom: 24, fontSize: 14 }}>Your coach has been notified. Great work!</div>
                         <button onClick={() => { setSubmitted(false); setAnswers({}); }} style={{
                           background: accent, color: "#0F0F0F", fontWeight: 600,
-                          padding: "9px 20px", borderRadius: 8, border: "none", cursor: "pointer",
+                          padding: "10px 24px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14,
                         }}>Submit Another</button>
                       </div>
                     ) : (
@@ -406,8 +555,8 @@ export default function PortalPage() {
                           let questions: string[] = [];
                           try { questions = JSON.parse(activeTemplate.questions); } catch { questions = [activeTemplate.questions]; }
                           return questions.map((q, i) => (
-                            <div key={i} style={{ marginBottom: 18 }}>
-                              <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 8 }}>{q}</label>
+                            <div key={i} style={{ marginBottom: 22 }}>
+                              <label style={{ fontSize: 14, fontWeight: 500, display: "block", marginBottom: 10, color: "#F0F0F0" }}>{q}</label>
                               <textarea
                                 value={answers[i] ?? ""}
                                 onChange={e => setAnswers(prev => ({ ...prev, [i]: e.target.value }))}
@@ -415,17 +564,21 @@ export default function PortalPage() {
                                 placeholder="Your answer..."
                                 style={{
                                   width: "100%", background: "#1A1A1A", border: "1px solid #2A2A2A",
-                                  color: "#F0F0F0", borderRadius: 8, padding: "10px 14px",
+                                  color: "#F0F0F0", borderRadius: 10, padding: "12px 16px",
                                   fontSize: 14, outline: "none", resize: "vertical", boxSizing: "border-box",
+                                  lineHeight: 1.5, transition: "border-color 0.15s",
                                 }}
+                                onFocus={e => e.target.style.borderColor = accent}
+                                onBlur={e => e.target.style.borderColor = "#2A2A2A"}
                               />
                             </div>
                           ));
                         })()}
                         <button type="submit" disabled={submitting} style={{
                           background: accent, color: "#0F0F0F", fontWeight: 600,
-                          padding: "10px 24px", borderRadius: 8, border: "none",
+                          padding: "12px 28px", borderRadius: 8, border: "none",
                           cursor: submitting ? "not-allowed" : "pointer", opacity: submitting ? 0.7 : 1,
+                          fontSize: 14, transition: "opacity 0.15s",
                         }}>
                           {submitting ? "Submitting..." : "Submit Check-In"}
                         </button>
@@ -438,6 +591,17 @@ export default function PortalPage() {
           </div>
         )}
       </div>
+
+      {/* ── Footer ── */}
+      <footer style={{
+        borderTop: "1px solid #1A1A1A", padding: "28px 24px",
+        textAlign: "center", color: "#333", fontSize: 12,
+        letterSpacing: "0.02em",
+      }}>
+        Powered by <span style={{ color: "#505050", fontWeight: 600 }}>ClientFlow</span>
+        <span style={{ margin: "0 8px", color: "#222" }}>&middot;</span>
+        <span>&copy; {new Date().getFullYear()}</span>
+      </footer>
     </div>
   );
 }
