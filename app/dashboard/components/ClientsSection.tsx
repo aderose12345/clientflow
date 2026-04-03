@@ -16,15 +16,6 @@ const inp: React.CSSProperties = {
   borderRadius: 8, padding: "10px 14px", fontSize: 14, outline: "none", boxSizing: "border-box",
 };
 
-function StatusBadge({ status }: { status: string }) {
-  const st = CLIENT_STATUS[status as ClientStatus] ?? CLIENT_STATUS.on_track;
-  return (
-    <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, background: st.bg, color: st.color }}>
-      {st.label}
-    </span>
-  );
-}
-
 function timeAgo(dateStr: string | null) {
   if (!dateStr) return "Never";
   const diff = Date.now() - new Date(dateStr).getTime();

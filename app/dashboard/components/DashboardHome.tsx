@@ -49,7 +49,7 @@ export default function DashboardHome({ onNav }: { onNav: (id: string) => void }
     return (
       <div>
         <h1 style={{ fontSize: 24, fontWeight: 400, marginBottom: 4, color: "#F0F0F0" }}>Good morning 👋</h1>
-        <p style={{ color: "#A0A0A0", marginBottom: 24 }}>Here's what needs your attention today.</p>
+        <p style={{ color: "#A0A0A0", marginBottom: 24 }}>Here&apos;s what needs your attention today.</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
           {[1,2,3,4].map(i => (
             <div key={i} style={{ background: "#1E1E1E", borderRadius: 12, height: 100, animation: "pulse 1.5s infinite" }} />
@@ -62,7 +62,7 @@ export default function DashboardHome({ onNav }: { onNav: (id: string) => void }
   return (
     <div>
       <h1 style={{ fontSize: 24, fontWeight: 400, marginBottom: 4, color: "#F0F0F0" }}>Good morning 👋</h1>
-      <p style={{ color: "#A0A0A0", marginBottom: 24 }}>Here's what needs your attention today.</p>
+      <p style={{ color: "#A0A0A0", marginBottom: 24 }}>Here&apos;s what needs your attention today.</p>
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>

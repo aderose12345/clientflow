@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type Workspace = {
@@ -61,6 +61,14 @@ const PLANS = [
 ];
 
 export default function BillingPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0F0F0F" }} />}>
+      <BillingContent />
+    </Suspense>
+  );
+}
+
+function BillingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const success = searchParams.get("success") === "true";

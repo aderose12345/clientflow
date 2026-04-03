@@ -98,7 +98,7 @@ export default function SettingsSection() {
           </div>
           {workspace?.subscriptionStatus === "trial" && (
             <div style={{ fontSize: 12, color: "#A0A0A0", marginBottom: 18 }}>
-              You're on the free trial. Upgrade to unlock unlimited clients and automations.
+              You&apos;re on the free trial. Upgrade to unlock unlimited clients and automations.
             </div>
           )}
           <button onClick={() => router.push("/billing")} style={{

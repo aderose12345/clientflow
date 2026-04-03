@@ -91,7 +91,7 @@ export default function PortalPage() {
           <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
           <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>No portal found</h2>
           <p style={{ color: "#A0A0A0", marginBottom: 24 }}>
-            Your account doesn't have a client record yet. If you received an invitation, make sure you're signing in with the same email it was sent to.
+            Your account doesn&apos;t have a client record yet. If you received an invitation, make sure you&apos;re signing in with the same email it was sent to.
           </p>
           <button onClick={() => signOut(() => router.push("/sign-in"))} style={{
             background: "#C8F04A", color: "#0F0F0F", fontWeight: 600,
@@ -154,7 +154,7 @@ export default function PortalPage() {
           </h1>
           {program && (
             <p style={{ color: "#A0A0A0", margin: 0 }}>
-              You're enrolled in <strong style={{ color: "#F0F0F0" }}>{program.name}</strong>
+              You&apos;re enrolled in <strong style={{ color: "#F0F0F0" }}>{program.name}</strong>
               {program.duration ? ` · ${program.duration}` : ""}
             </p>
           )}
