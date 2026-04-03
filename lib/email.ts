@@ -113,3 +113,53 @@ export async function sendAgencyNotification({
     console.error("[email] Agency notification failed:", err);
   }
 }
+
+export async function sendAutomationEmail({
+  toEmail,
+  subject,
+  bodyHtml,
+  brandColor,
+  logoUrl,
+}: {
+  toEmail: string;
+  subject: string;
+  bodyHtml: string;
+  brandColor?: string;
+  logoUrl?: string | null;
+}) {
+  if (!process.env.RESEND_API_KEY) return;
+
+  const { Resend } = await import("resend");
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const accent = brandColor || "#C8F04A";
+
+  try {
+    await resend.emails.send({
+      from: "ClientFlow <hello@clientflow.name>",
+      to: toEmail,
+      subject,
+      html: `
+        <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#0F0F0F;color:#F0F0F0;padding:40px;border-radius:12px;">
+          <div style="margin-bottom:24px;">
+            ${logoUrl
+              ? `<img src="${logoUrl}" alt="Logo" style="height:36px;border-radius:6px;" />`
+              : `<span style="background:${accent};color:#0F0F0F;font-weight:900;font-size:18px;padding:6px 14px;border-radius:6px;">CF</span>`
+            }
+          </div>
+          <div style="color:#F0F0F0;font-size:15px;line-height:1.6;margin-bottom:24px;">
+            ${bodyHtml}
+          </div>
+          <a href="${appUrl}/portal" style="display:inline-block;background:${accent};color:#0F0F0F;font-weight:700;padding:12px 24px;border-radius:8px;text-decoration:none;font-size:14px;">
+            View Portal →
+          </a>
+          <p style="color:#505050;font-size:11px;margin-top:32px;">
+            This is an automated message from ClientFlow.
+          </p>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error("[email] Automation email failed:", err);
+  }
+}

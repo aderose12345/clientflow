@@ -28,6 +28,7 @@ model Workspace {
   automationRules      AutomationRule[]
   activityEvents       ActivityEvent[]
   notes                Note[]
+  automationLogs       AutomationLog[]
 }
 
 model Client {
@@ -56,6 +57,7 @@ model Client {
   notes                Note[]
   documentRequests     DocumentRequest[]
   stepCompletions      StepCompletion[]
+  automationLogs       AutomationLog[]
 }
 
 model Program {
@@ -263,4 +265,14 @@ model StepCompletion {
   data      Json?
   completedAt DateTime @default(now())
   @@unique([clientId, stepId])
+}
+
+model AutomationLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  ruleType    String
+  sentAt      DateTime @default(now())
 }

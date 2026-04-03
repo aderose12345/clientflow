@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { DEFAULT_AUTOMATIONS } from "@/lib/constants";
 
 type Rule = { id: string; triggerType: string; messageTemplate: string; channel: string; active: boolean };
+type LogEntry = { id: string; ruleType: string; sentAt: string; client: { firstName: string; lastName: string; email: string } };
 
 // Trigger metadata: human description, icon, category
 const TRIGGER_META: Record<string, { label: string; desc: string; icon: string; category: string }> = {
@@ -45,6 +46,8 @@ export default function AutomationsSection() {
   const [seeding, setSeeding]       = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"rules" | "log">("rules");
+  const [logs, setLogs]             = useState<LogEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   // Add form
   const [showAdd, setShowAdd]           = useState(false);
@@ -66,6 +69,14 @@ export default function AutomationsSection() {
   }, []);
 
   useEffect(() => { fetchRules(); }, [fetchRules]);
+
+  async function fetchLogs() {
+    setLogsLoading(true);
+    const res = await fetch("/api/automations/logs");
+    const d = await res.json();
+    setLogs(d.logs ?? []);
+    setLogsLoading(false);
+  }
 
   async function seedDefaults() {
     setSeeding(true);
@@ -161,7 +172,7 @@ export default function AutomationsSection() {
       {/* View toggle */}
       <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "1px solid #2A2A2A" }}>
         {(["rules", "log"] as const).map(v => (
-          <button key={v} onClick={() => setActiveView(v)} style={{
+          <button key={v} onClick={() => { setActiveView(v); if (v === "log") fetchLogs(); }} style={{
             padding: "10px 18px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500,
             background: "transparent", textTransform: "capitalize",
             color: activeView === v ? "#C8F04A" : "#606060",
@@ -347,32 +358,41 @@ export default function AutomationsSection() {
           <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 24 }}>
             <div style={{ fontWeight: 600, fontSize: 15, color: "#F0F0F0", marginBottom: 16 }}>Activity Log</div>
 
-            {/* Placeholder — real log entries would come from a logging table */}
-            <div style={{ textAlign: "center", padding: "32px 0" }}>
-              <div style={{ fontSize: 28, marginBottom: 10 }}>📋</div>
-              <div style={{ fontWeight: 500, color: "#F0F0F0", marginBottom: 6 }}>Automation log is building up</div>
-              <div style={{ color: "#606060", fontSize: 13, lineHeight: 1.6, maxWidth: 400, margin: "0 auto" }}>
-                As your automations trigger, a log of every sent email will appear here so you can verify reminders are going out. Each entry will show the date, which rule fired, which client received the message, and delivery status.
+            {logsLoading ? (
+              <div style={{ color: "#606060", fontSize: 13, padding: "24px 0", textAlign: "center" }}>Loading logs...</div>
+            ) : logs.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "32px 0" }}>
+                <div style={{ fontSize: 28, marginBottom: 10 }}>📋</div>
+                <div style={{ fontWeight: 500, color: "#F0F0F0", marginBottom: 6 }}>No automation emails sent yet</div>
+                <div style={{ color: "#606060", fontSize: 13, lineHeight: 1.6, maxWidth: 400, margin: "0 auto" }}>
+                  The cron job runs every hour. When a trigger condition is met, emails are sent automatically and logged here.
+                </div>
               </div>
-            </div>
-
-            {/* Show active rules summary */}
-            {rules.length > 0 && (
-              <div style={{ borderTop: "1px solid #1E1E1E", paddingTop: 16, marginTop: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#606060", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Active Rules Summary</div>
-                {rules.filter(r => r.active).map(rule => {
-                  const m = meta(rule.triggerType);
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {logs.map(log => {
+                  const m = meta(log.ruleType.replace(/_task_.*/, "").replace(/_milestone_.*/, ""));
+                  const sentDate = new Date(log.sentAt);
                   return (
-                    <div key={rule.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid #1E1E1E" }}>
-                      <span style={{ fontSize: 14 }}>{m.icon}</span>
-                      <span style={{ fontSize: 13, color: "#A0A0A0", flex: 1 }}>{m.label}</span>
-                      <span style={{ fontSize: 11, color: "#C8F04A", fontWeight: 500 }}>Active</span>
+                    <div key={log.id} style={{
+                      display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+                      borderRadius: 8, background: "#1A1A1A",
+                    }}>
+                      <span style={{ fontSize: 16 }}>{m.icon || "📧"}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: "#F0F0F0" }}>
+                          <span style={{ fontWeight: 500 }}>{log.client.firstName} {log.client.lastName}</span>
+                          <span style={{ color: "#606060" }}> — {m.label || log.ruleType.replace(/_/g, " ")}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: "#505050", marginTop: 2 }}>
+                          {sentDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })} at {sentDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                          <span style={{ marginLeft: 8, color: "#606060" }}>{log.client.email}</span>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: "3px 10px", borderRadius: 99, background: "rgba(200,240,74,0.1)", color: "#C8F04A" }}>Sent</span>
                     </div>
                   );
                 })}
-                {rules.filter(r => r.active).length === 0 && (
-                  <div style={{ fontSize: 13, color: "#606060" }}>No active automations. Enable some rules to start logging activity.</div>
-                )}
               </div>
             )}
           </div>
