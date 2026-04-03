@@ -30,11 +30,20 @@ export async function POST(req: NextRequest) {
   const workspace = await getOrCreateWorkspace(userId, coachEmail);
 
   const body = await req.json();
-  const { firstName, lastName, email, phone, programId } = body;
+  const { firstName, lastName, email, phone, programId, companyName, assignedTo, newProgramName } = body;
 
   if (!firstName?.trim()) return NextResponse.json({ error: "First name is required" }, { status: 400 });
   if (!lastName?.trim())  return NextResponse.json({ error: "Last name is required" }, { status: 400 });
   if (!email?.trim())     return NextResponse.json({ error: "Email is required" }, { status: 400 });
+
+  // If a new program name is provided, create it first
+  let resolvedProgramId = programId || null;
+  if (!resolvedProgramId && newProgramName?.trim()) {
+    const newProgram = await prisma.program.create({
+      data: { workspaceId: workspace.id, name: newProgramName.trim() },
+    });
+    resolvedProgramId = newProgram.id;
+  }
 
   try {
     const client = await prisma.client.create({
@@ -44,7 +53,9 @@ export async function POST(req: NextRequest) {
         lastName: lastName.trim(),
         email: email.trim().toLowerCase(),
         phone: phone?.trim() || null,
-        programId: programId || null,
+        companyName: companyName?.trim() || null,
+        assignedTo: assignedTo?.trim() || null,
+        programId: resolvedProgramId,
         status: "on_track",
         invitedAt: new Date(),
       },
@@ -52,13 +63,21 @@ export async function POST(req: NextRequest) {
     });
 
     const coachName = user?.fullName ?? coachEmail;
-    await sendClientInvite({
-      toEmail: client.email,
-      toName: `${client.firstName} ${client.lastName}`,
-      coachName,
-      businessName: workspace.businessName,
-      programName: client.program?.name,
-    });
+    console.log("[clients/POST] Client created, sending invite email to:", client.email);
+
+    try {
+      const emailResult = await sendClientInvite({
+        toEmail: client.email,
+        toName: `${client.firstName} ${client.lastName}`,
+        coachName,
+        businessName: workspace.businessName,
+        programName: client.program?.name,
+      });
+      console.log("[clients/POST] Email result:", JSON.stringify(emailResult));
+    } catch (emailErr) {
+      console.error("[clients/POST] Email send failed:", emailErr);
+      // Don't block client creation if email fails
+    }
 
     return NextResponse.json({ client }, { status: 201 });
   } catch (err: unknown) {
