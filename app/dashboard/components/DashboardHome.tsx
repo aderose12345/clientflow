@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { CLIENT_STATUS } from "@/lib/constants";
 
 type Client = {
@@ -22,6 +23,7 @@ function timeAgo(dateStr: string) {
 }
 
 export default function DashboardHome({ onNav }: { onNav: (id: string) => void }) {
+  const isMobile = useIsMobile();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -48,11 +50,11 @@ export default function DashboardHome({ onNav }: { onNav: (id: string) => void }
   if (loading) {
     return (
       <div>
-        <h1 style={{ fontSize: 24, fontWeight: 400, marginBottom: 4, color: "#F0F0F0" }}>Good morning 👋</h1>
-        <p style={{ color: "#A0A0A0", marginBottom: 24 }}>Here&apos;s what needs your attention today.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
+        <h1 style={{ fontSize: isMobile ? 20 : 24, fontWeight: 400, marginBottom: 4, color: "#F0F0F0" }}>Good morning 👋</h1>
+        <p style={{ color: "#A0A0A0", marginBottom: 24, fontSize: isMobile ? 13 : 14 }}>Here&apos;s what needs your attention today.</p>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 16, marginBottom: 24 }}>
           {[1,2,3,4].map(i => (
-            <div key={i} style={{ background: "#1E1E1E", borderRadius: 12, height: 100, animation: "pulse 1.5s infinite" }} />
+            <div key={i} style={{ background: "#1E1E1E", borderRadius: 12, height: isMobile ? 80 : 100, animation: "pulse 1.5s infinite" }} />
           ))}
         </div>
       </div>
@@ -61,36 +63,36 @@ export default function DashboardHome({ onNav }: { onNav: (id: string) => void }
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, fontWeight: 400, marginBottom: 4, color: "#F0F0F0" }}>Good morning 👋</h1>
-      <p style={{ color: "#A0A0A0", marginBottom: 24 }}>Here&apos;s what needs your attention today.</p>
+      <h1 style={{ fontSize: isMobile ? 20 : 24, fontWeight: 400, marginBottom: 4, color: "#F0F0F0" }}>Good morning 👋</h1>
+      <p style={{ color: "#A0A0A0", marginBottom: isMobile ? 16 : 24, fontSize: isMobile ? 13 : 14 }}>Here&apos;s what needs your attention today.</p>
 
       {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 16, marginBottom: isMobile ? 16 : 24 }}>
         {stats.map(s => (
-          <div key={s.label} style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 20 }}>
-            <div style={{ color: "#606060", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{s.label}</div>
-            <div style={{ fontSize: 32, fontWeight: 300, color: "#F0F0F0" }}>{s.value}</div>
-            <div style={{ color: "#606060", fontSize: 12, marginTop: 4 }}>{s.sub}</div>
+          <div key={s.label} style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: isMobile ? 14 : 20 }}>
+            <div style={{ color: "#606060", fontSize: isMobile ? 10 : 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: isMobile ? 6 : 8 }}>{s.label}</div>
+            <div style={{ fontSize: isMobile ? 24 : 32, fontWeight: 300, color: "#F0F0F0" }}>{s.value}</div>
+            <div style={{ color: "#606060", fontSize: isMobile ? 11 : 12, marginTop: 4 }}>{s.sub}</div>
           </div>
         ))}
       </div>
 
       {/* Status breakdown */}
       {total > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 12 : 16, marginBottom: isMobile ? 16 : 24 }}>
           {/* Recent clients */}
-          <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 20 }}>
+          <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: isMobile ? 16 : 20 }}>
             <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 16, color: "#F0F0F0" }}>Recent Clients</div>
             {recent.map(c => {
               const st = CLIENT_STATUS[c.status as keyof typeof CLIENT_STATUS] ?? CLIENT_STATUS.on_track;
               return (
                 <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #1E1E1E" }}>
-                  <div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, color: "#F0F0F0" }}>{c.firstName} {c.lastName}</div>
-                    <div style={{ fontSize: 11, color: "#606060" }}>{c.program?.name ?? "No program"}</div>
+                    <div style={{ fontSize: 11, color: "#606060", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.program?.name ?? "No program"}</div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 11, color: "#606060" }}>{timeAgo(c.createdAt)}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    {!isMobile && <span style={{ fontSize: 11, color: "#606060" }}>{timeAgo(c.createdAt)}</span>}
                     <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 99, background: st.bg, color: st.color }}>
                       {st.label}
                     </span>
@@ -101,7 +103,7 @@ export default function DashboardHome({ onNav }: { onNav: (id: string) => void }
           </div>
 
           {/* Health overview */}
-          <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 20 }}>
+          <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: isMobile ? 16 : 20 }}>
             <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 16, color: "#F0F0F0" }}>Client Health</div>
             {[
               { name: "On Track",       count: onTrack,        color: CLIENT_STATUS.on_track.color },
@@ -129,20 +131,22 @@ export default function DashboardHome({ onNav }: { onNav: (id: string) => void }
 
       {/* Empty state CTA */}
       {total === 0 && (
-        <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 48, textAlign: "center" }}>
+        <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: isMobile ? 32 : 48, textAlign: "center" }}>
           <div style={{ fontSize: 40, marginBottom: 16 }}>🚀</div>
-          <div style={{ fontWeight: 600, fontSize: 18, marginBottom: 8, color: "#F0F0F0" }}>Ready to onboard your first client?</div>
-          <div style={{ color: "#A0A0A0", marginBottom: 24 }}>Start by creating a program, then invite your first client.</div>
-          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+          <div style={{ fontWeight: 600, fontSize: isMobile ? 16 : 18, marginBottom: 8, color: "#F0F0F0" }}>Ready to set up your first onboarding flow?</div>
+          <div style={{ color: "#A0A0A0", marginBottom: 24, fontSize: isMobile ? 13 : 14 }}>Start by creating a program, then invite your first client.</div>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexDirection: isMobile ? "column" : "row" }}>
             <button onClick={() => onNav("programs")} style={{
               background: "#C8F04A", color: "#0F0F0F", fontWeight: 600,
               padding: "10px 24px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14,
+              width: isMobile ? "100%" : "auto",
             }}>
               Create Program
             </button>
             <button onClick={() => onNav("clients")} style={{
               background: "transparent", color: "#A0A0A0",
               padding: "10px 24px", borderRadius: 8, border: "1px solid #2A2A2A", cursor: "pointer", fontSize: 14,
+              width: isMobile ? "100%" : "auto",
             }}>
               Invite Client
             </button>
