@@ -14,7 +14,7 @@ export async function GET() {
   const client = await prisma.client.findFirst({
     where: { email: email.toLowerCase() },
     include: {
-      workspace: { select: { businessName: true, brandColor: true, logoUrl: true } },
+      workspace: { select: { businessName: true, brandColor: true, logoUrl: true, hideBranding: true, portalWelcomeMessage: true, portalPrimaryColor: true, supportEmail: true } },
       program: {
         include: {
           steps:            { orderBy: { position: "asc" } },
@@ -24,7 +24,9 @@ export async function GET() {
       },
       tasks: { orderBy: { createdAt: "asc" } },
       milestoneCompletions: true,
-      checkInSubmissions: { orderBy: { submittedAt: "desc" }, take: 5 },
+      checkInSubmissions: { orderBy: { submittedAt: "desc" }, take: 10 },
+      documentRequests: { orderBy: { requestedAt: "desc" } },
+      stepCompletions: true,
     },
   });
 

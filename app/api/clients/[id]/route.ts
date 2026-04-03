@@ -46,16 +46,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json();
-  const { firstName, lastName, phone, status, programId } = body;
+  const { firstName, lastName, phone, status, programId, companyName, assignedTo } = body;
 
   const updated = await prisma.client.update({
     where: { id },
     data: {
-      ...(firstName  !== undefined && { firstName: firstName.trim() }),
-      ...(lastName   !== undefined && { lastName: lastName.trim() }),
-      ...(phone      !== undefined && { phone: phone?.trim() || null }),
-      ...(status     !== undefined && { status }),
-      ...(programId  !== undefined && { programId: programId || null }),
+      ...(firstName   !== undefined && { firstName: firstName.trim() }),
+      ...(lastName    !== undefined && { lastName: lastName.trim() }),
+      ...(phone       !== undefined && { phone: phone?.trim() || null }),
+      ...(companyName !== undefined && { companyName: companyName?.trim() || null }),
+      ...(assignedTo  !== undefined && { assignedTo: assignedTo?.trim() || null }),
+      ...(status      !== undefined && { status }),
+      ...(programId   !== undefined && { programId: programId || null }),
     },
     include: { program: { select: { id: true, name: true } } },
   });
@@ -76,6 +78,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.$transaction([
+    prisma.documentRequest.deleteMany({ where: { clientId: id } }),
     prisma.checkInSubmission.deleteMany({ where: { clientId: id } }),
     prisma.milestoneCompletion.deleteMany({ where: { clientId: id } }),
     prisma.agreementAcceptance.deleteMany({ where: { clientId: id } }),

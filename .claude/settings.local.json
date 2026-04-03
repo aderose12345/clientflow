@@ -24,7 +24,13 @@
       "Bash(vercel whoami:*)",
       "Bash(vercel project:*)",
       "Bash(vercel env:*)",
-      "Bash(vercel:*)"
+      "Bash(vercel:*)",
+      "Bash(npm install:*)",
+      "Bash(mkdir -p \"C:/Users/adero/Desktop/clientflow/app/api/programs/[id]/steps/reorder\")",
+      "Bash(mkdir -p \"C:/Users/adero/Desktop/clientflow/app/api/programs/[id]/duplicate\")",
+      "Bash(gh api:*)",
+      "Bash(npx vercel-build:*)",
+      "WebFetch(domain:resend.com)"
     ]
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 
 const NAV_ITEMS = [
   { id: "dashboard",   label: "Dashboard",   icon: "⌂" },
@@ -20,6 +21,17 @@ type Props = {
 export default function Sidebar({ activeNav, onNav, userEmail, subscriptionStatus }: Props) {
   const { signOut } = useClerk();
   const router = useRouter();
+  const [isAdminView, setIsAdminView] = useState(false);
+  const isAdmin = userEmail === "a.derose12345@gmail.com";
+
+  useEffect(() => {
+    setIsAdminView(document.cookie.includes("adminViewingWorkspace="));
+  }, []);
+
+  function exitAdminView() {
+    document.cookie = "adminViewingWorkspace=;path=/;max-age=0";
+    window.location.reload();
+  }
 
   return (
     <div style={{
@@ -63,6 +75,24 @@ export default function Sidebar({ activeNav, onNav, userEmail, subscriptionStatu
 
       {/* Bottom */}
       <div style={{ padding: "12px 8px", borderTop: "1px solid #2A2A2A" }}>
+        {isAdminView && (
+          <button onClick={exitAdminView} style={{
+            width: "100%", padding: "8px 12px", borderRadius: 8, marginBottom: 6,
+            background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.2)",
+            color: "#FF6B6B", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left",
+          }}>
+            Exit Admin View
+          </button>
+        )}
+        {isAdmin && !isAdminView && (
+          <button onClick={() => router.push("/admin")} style={{
+            width: "100%", padding: "8px 12px", borderRadius: 8, marginBottom: 6,
+            background: "rgba(255,107,107,0.06)", border: "1px solid rgba(255,107,107,0.15)",
+            color: "#FF6B6B", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left",
+          }}>
+            Super Admin
+          </button>
+        )}
         <button
           onClick={() => router.push("/billing")}
           style={{

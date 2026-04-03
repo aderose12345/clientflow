@@ -1,15 +1,16 @@
 "use client";
 import { useClerk } from "@clerk/nextjs";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useIsMobile } from "@/lib/useIsMobile";
 
-type Step       = { id: string; type: string; title: string; description: string | null; position: number };
+type Step       = { id: string; type: string; title: string; description: string | null; position: number; fields?: unknown };
 type Milestone  = { id: string; title: string; description: string | null; position: number };
-type Template   = { id: string; name: string; frequency: string; questions: string };
+type Template   = { id: string; title: string; description: string | null; position: number; frequency: string; questions: string };
 type Task       = { id: string; title: string; description: string | null; status: string; dueDate: string | null; completedAt: string | null };
 type Workspace  = { businessName: string; brandColor: string; logoUrl: string | null; hideBranding?: boolean; portalWelcomeMessage?: string | null; portalPrimaryColor?: string | null; supportEmail?: string | null };
 type DocReq     = { id: string; title: string; description: string | null; required: boolean; status: string; fileUrl: string | null; fileName: string | null; requestedAt: string };
+type StepCompletion = { id: string; stepId: string; data: unknown; completedAt: string };
 type Program    = { id: string; name: string; description: string | null; duration: string | null; steps: Step[]; milestones: Milestone[]; checkInTemplates: Template[] };
 type Client     = {
   id: string; firstName: string; lastName: string; email: string; status: string; createdAt: string;
@@ -18,10 +19,31 @@ type Client     = {
   milestoneCompletions: { milestoneId: string }[];
   checkInSubmissions: { templateId: string; submittedAt: string; answers: string }[];
   documentRequests: DocReq[];
+  stepCompletions: StepCompletion[];
+};
+
+type StepProgress = {
+  id: string; type: string; title: string; description: string | null;
+  position: number; fields: unknown; completed: boolean; completedAt: string | null;
+};
+
+type ProgressData = {
+  steps: StepProgress[];
+  currentStep: StepProgress | null;
+  progressPct: number;
+  completedCount: number;
+  totalCount: number;
+};
+
+type IntakeField = {
+  label: string;
+  type: "short_text" | "email" | "phone" | "long_text" | "dropdown" | "multiple_choice" | "checkbox" | "date" | "file_link";
+  required?: boolean;
+  options?: string;
 };
 
 const STEP_ICON: Record<string, string> = {
-  intake_form: "📝", agreement: "✍️", task: "✅", milestone: "🏆", checkin: "📊", resource: "📁", document: "📎",
+  intake_form: "\u{1F4DD}", agreement: "\u270D\uFE0F", task: "\u2705", milestone: "\u{1F3C6}", checkin: "\u{1F4CA}", resource: "\u{1F4C1}", document: "\u{1F4CE}",
 };
 
 const STEP_ACTION: Record<string, string> = {
@@ -43,6 +65,10 @@ function daysAgo(d: string) {
   return `${days} days ago`;
 }
 
+function formatDate(d: string) {
+  return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 export default function PortalPage() {
   const { signOut } = useClerk();
   const router = useRouter();
@@ -51,9 +77,8 @@ export default function PortalPage() {
   const [loading, setLoading]       = useState(true);
   const [notFound, setNotFound]     = useState(false);
   const [activeTab, setActiveTab]   = useState<"home" | "documents" | "updates" | "resources">("home");
-  const [completingId, setCompletingId] = useState<string | null>(null);
 
-  // Update form state
+  // Update form state (for Updates tab)
   const [updateCompleted, setUpdateCompleted] = useState("");
   const [updateStuck, setUpdateStuck]         = useState("");
   const [updateConfidence, setUpdateConfidence] = useState(7);
@@ -61,33 +86,109 @@ export default function PortalPage() {
   const [submitting, setSubmitting]             = useState(false);
   const [submitted, setSubmitted]               = useState(false);
 
-  // Document upload state
+  // Document upload state (for Documents tab)
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [linkInput, setLinkInput]     = useState<Record<string, string>>({});
 
-  const fetchClient = useCallback(async () => {
-    setLoading(true);
-    // Check role — redirect owners to dashboard
-    try {
-      const roleRes = await fetch("/api/auth/role");
-      const roleData = await roleRes.json();
-      if (roleData.role === "owner") { router.replace("/dashboard"); return; }
-    } catch { /* continue to load portal */ }
+  // New step-based state
+  const [progress, setProgress] = useState<ProgressData | null>(null);
+  const [expandedStepId, setExpandedStepId] = useState<string | null>(null);
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [agreeName, setAgreeName] = useState("");
+  const [agreeCheck, setAgreeCheck] = useState(false);
+  const [stepSubmitting, setStepSubmitting] = useState(false);
+  const [stepCompleted, setStepCompleted] = useState<string | null>(null);
+  const [docLink, setDocLink] = useState("");
+  const [formErrors, setFormErrors] = useState<Record<string, boolean>>({});
 
+  // Checkin inline state
+  const [checkinCompleted, setCheckinCompleted] = useState("");
+  const [checkinStuck, setCheckinStuck] = useState("");
+  const [checkinConfidence, setCheckinConfidence] = useState(7);
+  const [checkinNextAction, setCheckinNextAction] = useState("");
+
+  const journeyRef = useRef<HTMLDivElement>(null);
+  const resourceAutoCompleted = useRef<Set<string>>(new Set());
+
+  const fetchClient = useCallback(async () => {
     const res = await fetch("/api/portal/me");
     if (res.status === 404) { setNotFound(true); setLoading(false); return; }
     const d = await res.json();
     setClient(d.client);
-    setLoading(false);
-  }, [router]);
+  }, []);
 
-  useEffect(() => { fetchClient(); }, [fetchClient]);
+  const fetchProgress = useCallback(async () => {
+    const res = await fetch("/api/portal/progress");
+    if (!res.ok) return;
+    const d = await res.json();
+    setProgress(d);
+  }, []);
 
-  async function completeTask(taskId: string) {
-    setCompletingId(taskId);
-    await fetch(`/api/portal/tasks/${taskId}/complete`, { method: "POST" });
-    setCompletingId(null);
-    fetchClient();
+  useEffect(() => {
+    async function init() {
+      setLoading(true);
+      try {
+        const roleRes = await fetch("/api/auth/role");
+        const roleData = await roleRes.json();
+        if (roleData.role === "owner") { router.replace("/dashboard"); return; }
+      } catch { /* continue to load portal */ }
+      await fetchClient();
+      await fetchProgress();
+      setLoading(false);
+    }
+    init();
+  }, [fetchClient, fetchProgress, router]);
+
+  // Auto-expand current step
+  useEffect(() => {
+    if (progress?.currentStep && !expandedStepId && !stepCompleted) {
+      setExpandedStepId(progress.currentStep.id);
+    }
+  }, [progress?.currentStep, expandedStepId, stepCompleted]);
+
+  // Auto-complete resource steps
+  useEffect(() => {
+    if (!progress) return;
+    progress.steps.forEach(step => {
+      if (step.type === "resource" && !step.completed && !resourceAutoCompleted.current.has(step.id)) {
+        resourceAutoCompleted.current.add(step.id);
+        fetch(`/api/portal/steps/${step.id}/complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }).then(() => {
+          fetchProgress();
+        });
+      }
+    });
+  }, [progress, fetchProgress]);
+
+  async function completeStep(stepId: string, body: Record<string, unknown> = {}) {
+    setStepSubmitting(true);
+    await fetch(`/api/portal/steps/${stepId}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setStepSubmitting(false);
+    setStepCompleted(stepId);
+    // Reset form state
+    setFormValues({});
+    setAgreeName("");
+    setAgreeCheck(false);
+    setDocLink("");
+    setFormErrors({});
+    setCheckinCompleted("");
+    setCheckinStuck("");
+    setCheckinConfidence(7);
+    setCheckinNextAction("");
+    // Refetch
+    await Promise.all([fetchClient(), fetchProgress()]);
+    // Auto-advance after 2s
+    setTimeout(() => {
+      setStepCompleted(null);
+      setExpandedStepId(null);
+    }, 2000);
   }
 
   async function submitUpdate() {
@@ -107,6 +208,7 @@ export default function PortalPage() {
     setSubmitted(true);
     setUpdateCompleted(""); setUpdateStuck(""); setUpdateConfidence(7); setUpdateNextAction("");
     fetchClient();
+    fetchProgress();
   }
 
   async function submitDocLink(docId: string) {
@@ -120,6 +222,7 @@ export default function PortalPage() {
     setUploadingId(null);
     setLinkInput(prev => ({ ...prev, [docId]: "" }));
     fetchClient();
+    fetchProgress();
   }
 
   // ── Derived data ──
@@ -129,36 +232,489 @@ export default function PortalPage() {
   const steps = program?.steps ?? [];
   const tasks = client?.tasks ?? [];
   const docs = client?.documentRequests ?? [];
-  const completedTaskIds = new Set(tasks.filter(t => t.status === "complete").map(t => t.id));
   const uploadedDocIds = new Set(docs.filter(d => d.status !== "pending").map(d => d.id));
   const submissions = client?.checkInSubmissions ?? [];
 
-  // Step completion mapping: a step is "done" if a matching task is completed
-  // We match steps to tasks by title (since tasks are created from steps)
-  const completedStepPositions = new Set<number>();
-  steps.forEach(step => {
-    const matchingTask = tasks.find(t => t.title === step.title && t.status === "complete");
-    if (matchingTask) completedStepPositions.add(step.position);
-    // Resource steps are always "available" not completable
-    // Check-in steps are done if there's a submission
-    if (step.type === "checkin" && submissions.length > 0) completedStepPositions.add(step.position);
-    // Document steps
-    if ((step.type === "document" || step.type === "task") && docs.some(d => d.title === step.title && d.status !== "pending")) {
-      completedStepPositions.add(step.position);
-    }
-  });
-
-  const completedSteps = completedStepPositions.size;
-  const totalSteps = steps.filter(s => s.type !== "resource").length || 1;
-  const progressPct = Math.round((completedSteps / totalSteps) * 100);
-
-  // Find next incomplete step
-  const nextStep = steps.find(s => s.type !== "resource" && !completedStepPositions.has(s.position));
+  // Use progress data for step completion
+  const progressSteps = progress?.steps ?? [];
+  const completedSteps = progress?.completedCount ?? 0;
+  const totalSteps = progress?.totalCount ?? 1;
+  const progressPct = progress?.progressPct ?? 0;
+  const currentStep = progress?.currentStep ?? null;
+  const allComplete = progress ? progress.completedCount === progress.totalCount && progress.totalCount > 0 : false;
 
   const daysInProgram = client ? Math.max(1, Math.floor((Date.now() - new Date(client.createdAt).getTime()) / 86400000)) : 0;
   const resourceSteps = steps.filter(s => s.type === "resource");
   const pendingDocs = docs.filter(d => d.status === "pending").length;
   const statusBadge = STATUS_BADGE[client?.status ?? "on_track"] ?? STATUS_BADGE.on_track;
+
+  // Helper to get completion data for a step
+  function getCompletionData(stepId: string): Record<string, unknown> | null {
+    const sc = client?.stepCompletions?.find(c => c.stepId === stepId);
+    if (!sc) return null;
+    return (sc.data as Record<string, unknown>) ?? null;
+  }
+
+  // ── Scroll to journey helper ──
+  function scrollToJourney() {
+    setTimeout(() => {
+      journeyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  }
+
+  // ── Input style helper ──
+  const inputStyle: React.CSSProperties = {
+    width: "100%", background: "#1A1A1A", border: "1px solid #2A2A2A", color: "#F0F0F0",
+    borderRadius: 10, padding: "12px 16px", fontSize: 14, outline: "none",
+    boxSizing: "border-box", lineHeight: 1.5,
+  };
+
+  const textareaStyle: React.CSSProperties = {
+    width: "100%", background: "#1A1A1A", border: "1px solid #2A2A2A", color: "#F0F0F0",
+    borderRadius: 10, padding: "12px 16px", fontSize: 14, outline: "none", resize: "vertical",
+    boxSizing: "border-box", lineHeight: 1.5,
+  };
+
+  // ── Step form renderer ──
+  function renderStepForm(step: StepProgress) {
+    const isCompleted = step.completed;
+    const completionData = getCompletionData(step.id);
+    const justCompleted = stepCompleted === step.id;
+
+    // Show completion success state
+    if (justCompleted) {
+      return (
+        <div style={{ padding: "24px 0", textAlign: "center" }}>
+          <div style={{ width: 48, height: 48, borderRadius: "50%", background: accent, margin: "0 auto 12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span style={{ color: "#0F0F0F", fontSize: 22, fontWeight: 900 }}>{"\u2713"}</span>
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "#F0F0F0", marginBottom: 4 }}>Step Completed!</div>
+          <div style={{ fontSize: 13, color: "#A0A0A0" }}>Moving to next step...</div>
+        </div>
+      );
+    }
+
+    // ── INTAKE FORM ──
+    if (step.type === "intake_form") {
+      const fields: IntakeField[] = Array.isArray(step.fields) ? (step.fields as IntakeField[]) : [];
+
+      // Show submitted data if completed
+      if (isCompleted && completionData) {
+        const answers = (completionData.answers ?? completionData) as Record<string, string>;
+        return (
+          <div style={{ padding: "12px 0" }}>
+            <div style={{ fontSize: 12, color: accent, fontWeight: 600, marginBottom: 10 }}>Submitted Answers</div>
+            {Object.entries(answers).map(([key, val]) => (
+              <div key={key} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: "#606060", marginBottom: 2 }}>{key}</div>
+                <div style={{ fontSize: 13, color: "#A0A0A0" }}>{String(val)}</div>
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      if (fields.length === 0) {
+        return <div style={{ padding: "12px 0", fontSize: 13, color: "#606060" }}>No form fields configured for this step.</div>;
+      }
+
+      return (
+        <div style={{ padding: "12px 0" }}>
+          {fields.map((field, idx) => {
+            const fieldKey = field.label;
+            const value = formValues[fieldKey] ?? "";
+            const hasError = formErrors[fieldKey];
+
+            return (
+              <div key={idx} style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 13, fontWeight: 500, color: "#F0F0F0", display: "block", marginBottom: 6 }}>
+                  {field.label}
+                  {field.required && <span style={{ color: "#FF6B6B", marginLeft: 4 }}>*</span>}
+                </label>
+
+                {(field.type === "short_text" || field.type === "email" || field.type === "phone" || field.type === "file_link") && (
+                  <input
+                    type={field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"}
+                    value={value}
+                    onChange={e => {
+                      setFormValues(prev => ({ ...prev, [fieldKey]: e.target.value }));
+                      if (hasError) setFormErrors(prev => ({ ...prev, [fieldKey]: false }));
+                    }}
+                    placeholder={field.type === "email" ? "email@example.com" : field.type === "phone" ? "+1 (555) 000-0000" : field.type === "file_link" ? "Paste URL here..." : ""}
+                    style={{ ...inputStyle, borderColor: hasError ? "#FF6B6B" : "#2A2A2A" }}
+                    onFocus={e => e.target.style.borderColor = accent}
+                    onBlur={e => { if (!hasError) e.target.style.borderColor = "#2A2A2A"; }}
+                  />
+                )}
+
+                {field.type === "long_text" && (
+                  <textarea
+                    value={value}
+                    onChange={e => {
+                      setFormValues(prev => ({ ...prev, [fieldKey]: e.target.value }));
+                      if (hasError) setFormErrors(prev => ({ ...prev, [fieldKey]: false }));
+                    }}
+                    rows={3}
+                    style={{ ...textareaStyle, borderColor: hasError ? "#FF6B6B" : "#2A2A2A" }}
+                    onFocus={e => e.target.style.borderColor = accent}
+                    onBlur={e => { if (!hasError) e.target.style.borderColor = "#2A2A2A"; }}
+                  />
+                )}
+
+                {field.type === "dropdown" && (
+                  <select
+                    value={value}
+                    onChange={e => {
+                      setFormValues(prev => ({ ...prev, [fieldKey]: e.target.value }));
+                      if (hasError) setFormErrors(prev => ({ ...prev, [fieldKey]: false }));
+                    }}
+                    style={{ ...inputStyle, borderColor: hasError ? "#FF6B6B" : "#2A2A2A", appearance: "auto" }}
+                  >
+                    <option value="">Select...</option>
+                    {(field.options ?? "").split(",").map(opt => opt.trim()).filter(Boolean).map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                )}
+
+                {field.type === "multiple_choice" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {(field.options ?? "").split(",").map(opt => opt.trim()).filter(Boolean).map(opt => (
+                      <label key={opt} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13, color: "#F0F0F0" }}>
+                        <input
+                          type="radio"
+                          name={`field_${idx}`}
+                          value={opt}
+                          checked={value === opt}
+                          onChange={() => {
+                            setFormValues(prev => ({ ...prev, [fieldKey]: opt }));
+                            if (hasError) setFormErrors(prev => ({ ...prev, [fieldKey]: false }));
+                          }}
+                          style={{ accentColor: accent }}
+                        />
+                        {opt}
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                {field.type === "checkbox" && (
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13, color: "#F0F0F0" }}>
+                    <input
+                      type="checkbox"
+                      checked={value === "true"}
+                      onChange={e => {
+                        setFormValues(prev => ({ ...prev, [fieldKey]: e.target.checked ? "true" : "false" }));
+                        if (hasError) setFormErrors(prev => ({ ...prev, [fieldKey]: false }));
+                      }}
+                      style={{ accentColor: accent, width: 18, height: 18 }}
+                    />
+                    {field.label}
+                  </label>
+                )}
+
+                {field.type === "date" && (
+                  <input
+                    type="date"
+                    value={value}
+                    onChange={e => {
+                      setFormValues(prev => ({ ...prev, [fieldKey]: e.target.value }));
+                      if (hasError) setFormErrors(prev => ({ ...prev, [fieldKey]: false }));
+                    }}
+                    style={{ ...inputStyle, borderColor: hasError ? "#FF6B6B" : "#2A2A2A", colorScheme: "dark" }}
+                  />
+                )}
+
+                {hasError && (
+                  <div style={{ fontSize: 11, color: "#FF6B6B", marginTop: 4 }}>This field is required</div>
+                )}
+              </div>
+            );
+          })}
+
+          <button
+            onClick={() => {
+              // Validate required fields
+              const errors: Record<string, boolean> = {};
+              let hasErrors = false;
+              fields.forEach(field => {
+                if (field.required) {
+                  const val = formValues[field.label]?.trim();
+                  if (!val || val === "false") {
+                    errors[field.label] = true;
+                    hasErrors = true;
+                  }
+                }
+              });
+              if (hasErrors) {
+                setFormErrors(errors);
+                return;
+              }
+              completeStep(step.id, { answers: formValues });
+            }}
+            disabled={stepSubmitting}
+            style={{
+              background: accent, color: "#0F0F0F", fontWeight: 600,
+              padding: "12px 28px", borderRadius: 9, border: "none", cursor: "pointer",
+              fontSize: 14, opacity: stepSubmitting ? 0.7 : 1, marginTop: 8,
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
+            {stepSubmitting ? "Submitting..." : "Submit Form"}
+          </button>
+        </div>
+      );
+    }
+
+    // ── AGREEMENT ──
+    if (step.type === "agreement") {
+      const fieldsObj = (step.fields && typeof step.fields === "object" && !Array.isArray(step.fields)) ? step.fields as Record<string, unknown> : {};
+      const content = typeof fieldsObj.content === "string" ? fieldsObj.content : step.description || "Agreement content not available.";
+
+      // Show signed state
+      if (isCompleted && completionData) {
+        const signedName = (completionData.fullName as string) ?? "Unknown";
+        const signedAt = step.completedAt;
+        return (
+          <div style={{ padding: "16px 0", textAlign: "center" }}>
+            <div style={{ width: 48, height: 48, borderRadius: "50%", background: accent, margin: "0 auto 12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ color: "#0F0F0F", fontSize: 22, fontWeight: 900 }}>{"\u2713"}</span>
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#F0F0F0", marginBottom: 4 }}>Agreement Signed</div>
+            <div style={{ fontSize: 13, color: "#A0A0A0" }}>
+              Signed{signedAt ? ` on ${formatDate(signedAt)}` : ""} by <span style={{ color: accent }}>{signedName}</span>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ padding: "12px 0" }}>
+          <div style={{
+            background: "#1A1A1A", border: "1px solid #2A2A2A", borderRadius: 10,
+            padding: 20, maxHeight: 300, overflowY: "auto", marginBottom: 16,
+            fontSize: 13, color: "#C0C0C0", lineHeight: 1.7, whiteSpace: "pre-wrap",
+          }}>
+            {content}
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 13, fontWeight: 500, color: "#F0F0F0", display: "block", marginBottom: 6 }}>
+              Type your full legal name to sign <span style={{ color: "#FF6B6B" }}>*</span>
+            </label>
+            <input
+              type="text"
+              value={agreeName}
+              onChange={e => setAgreeName(e.target.value)}
+              placeholder="Full legal name"
+              style={inputStyle}
+              onFocus={e => e.target.style.borderColor = accent}
+              onBlur={e => e.target.style.borderColor = "#2A2A2A"}
+            />
+          </div>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 18 }}>
+            <input
+              type="checkbox"
+              checked={agreeCheck}
+              onChange={e => setAgreeCheck(e.target.checked)}
+              style={{ accentColor: accent, width: 18, height: 18 }}
+            />
+            <span style={{ fontSize: 13, color: "#A0A0A0" }}>I have read and agree to the terms above</span>
+          </label>
+
+          <button
+            onClick={() => completeStep(step.id, { fullName: agreeName })}
+            disabled={stepSubmitting || !agreeName.trim() || !agreeCheck}
+            style={{
+              background: accent, color: "#0F0F0F", fontWeight: 600,
+              padding: "12px 28px", borderRadius: 9, border: "none", cursor: "pointer",
+              fontSize: 14, opacity: (stepSubmitting || !agreeName.trim() || !agreeCheck) ? 0.5 : 1,
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
+            {stepSubmitting ? "Signing..." : "Sign Agreement"}
+          </button>
+        </div>
+      );
+    }
+
+    // ── TASK ──
+    if (step.type === "task") {
+      if (isCompleted) {
+        return (
+          <div style={{ padding: "16px 0", textAlign: "center" }}>
+            <div style={{ width: 48, height: 48, borderRadius: "50%", background: accent, margin: "0 auto 12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ color: "#0F0F0F", fontSize: 22, fontWeight: 900 }}>{"\u2713"}</span>
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#F0F0F0", marginBottom: 4 }}>Task Completed</div>
+            {step.completedAt && <div style={{ fontSize: 12, color: "#A0A0A0" }}>Completed {daysAgo(step.completedAt)}</div>}
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ padding: "12px 0" }}>
+          {step.description && (
+            <div style={{ fontSize: 14, color: "#A0A0A0", lineHeight: 1.6, marginBottom: 16 }}>{step.description}</div>
+          )}
+          <button
+            onClick={() => completeStep(step.id, {})}
+            disabled={stepSubmitting}
+            style={{
+              background: accent, color: "#0F0F0F", fontWeight: 600,
+              padding: "12px 28px", borderRadius: 9, border: "none", cursor: "pointer",
+              fontSize: 14, opacity: stepSubmitting ? 0.7 : 1,
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
+            {stepSubmitting ? "Completing..." : "Mark as Complete"}
+          </button>
+        </div>
+      );
+    }
+
+    // ── CHECKIN ──
+    if (step.type === "checkin") {
+      if (isCompleted && completionData) {
+        const ans = completionData as Record<string, string>;
+        return (
+          <div style={{ padding: "12px 0" }}>
+            <div style={{ fontSize: 12, color: accent, fontWeight: 600, marginBottom: 10 }}>Submitted Check-in</div>
+            {ans.completed ? <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, color: "#606060" }}>Completed:</span> <span style={{ fontSize: 13, color: "#A0A0A0" }}>{ans.completed}</span></div> : null}
+            {ans.stuck ? <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, color: "#606060" }}>Stuck on:</span> <span style={{ fontSize: 13, color: "#A0A0A0" }}>{ans.stuck}</span></div> : null}
+            {ans.confidence ? <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, color: "#606060" }}>Confidence:</span> <span style={{ fontSize: 13, color: "#A0A0A0" }}>{String(ans.confidence)}/10</span></div> : null}
+            {ans.nextAction ? <div><span style={{ fontSize: 11, color: "#606060" }}>Next action:</span> <span style={{ fontSize: 13, color: "#A0A0A0" }}>{ans.nextAction}</span></div> : null}
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ padding: "12px 0" }}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 13, fontWeight: 500, color: "#F0F0F0", display: "block", marginBottom: 6 }}>What did you complete?</label>
+            <textarea value={checkinCompleted} onChange={e => setCheckinCompleted(e.target.value)} rows={2} placeholder="List what you finished since your last update..." style={textareaStyle}
+              onFocus={e => e.target.style.borderColor = accent} onBlur={e => e.target.style.borderColor = "#2A2A2A"} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 13, fontWeight: 500, color: "#F0F0F0", display: "block", marginBottom: 6 }}>What are you stuck on?</label>
+            <textarea value={checkinStuck} onChange={e => setCheckinStuck(e.target.value)} rows={2} placeholder="Anything blocking your progress?" style={textareaStyle}
+              onFocus={e => e.target.style.borderColor = accent} onBlur={e => e.target.style.borderColor = "#2A2A2A"} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 13, fontWeight: 500, color: "#F0F0F0", display: "block", marginBottom: 6 }}>
+              Confidence: <span style={{ color: accent, fontWeight: 700 }}>{checkinConfidence}/10</span>
+            </label>
+            <input type="range" min={1} max={10} value={checkinConfidence} onChange={e => setCheckinConfidence(Number(e.target.value))} style={{ width: "100%", accentColor: accent }} />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#505050" }}>
+              <span>Not confident</span><span>Very confident</span>
+            </div>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 13, fontWeight: 500, color: "#F0F0F0", display: "block", marginBottom: 6 }}>What is your next action?</label>
+            <textarea value={checkinNextAction} onChange={e => setCheckinNextAction(e.target.value)} rows={2} placeholder="What will you do next?" style={textareaStyle}
+              onFocus={e => e.target.style.borderColor = accent} onBlur={e => e.target.style.borderColor = "#2A2A2A"} />
+          </div>
+          <button
+            onClick={() => completeStep(step.id, { answers: { completed: checkinCompleted, stuck: checkinStuck, confidence: checkinConfidence, nextAction: checkinNextAction } })}
+            disabled={stepSubmitting || !checkinCompleted.trim()}
+            style={{
+              background: accent, color: "#0F0F0F", fontWeight: 600,
+              padding: "12px 28px", borderRadius: 9, border: "none", cursor: "pointer",
+              fontSize: 14, opacity: (stepSubmitting || !checkinCompleted.trim()) ? 0.5 : 1,
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
+            {stepSubmitting ? "Submitting..." : "Submit Update"}
+          </button>
+        </div>
+      );
+    }
+
+    // ── DOCUMENT ──
+    if (step.type === "document") {
+      if (isCompleted && completionData) {
+        const url = (completionData.fileUrl as string) ?? "";
+        return (
+          <div style={{ padding: "12px 0" }}>
+            <div style={{ fontSize: 12, color: accent, fontWeight: 600, marginBottom: 8 }}>Document Submitted</div>
+            {url && (
+              <a href={url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: accent, textDecoration: "underline" }}>
+                View submitted document
+              </a>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ padding: "12px 0" }}>
+          {step.description && (
+            <div style={{ fontSize: 14, color: "#A0A0A0", lineHeight: 1.6, marginBottom: 14 }}>{step.description}</div>
+          )}
+          <label style={{ fontSize: 13, fontWeight: 500, color: "#F0F0F0", display: "block", marginBottom: 6 }}>
+            Paste a link to your document (Google Drive, Dropbox, etc.)
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="url"
+              value={docLink}
+              onChange={e => setDocLink(e.target.value)}
+              placeholder="https://..."
+              style={{ ...inputStyle, flex: 1 }}
+              onFocus={e => e.target.style.borderColor = accent}
+              onBlur={e => e.target.style.borderColor = "#2A2A2A"}
+            />
+            <button
+              onClick={() => completeStep(step.id, { fileUrl: docLink })}
+              disabled={stepSubmitting || !docLink.trim()}
+              style={{
+                background: accent, color: "#0F0F0F", fontWeight: 600,
+                padding: "12px 20px", borderRadius: 9, border: "none", cursor: "pointer",
+                fontSize: 14, flexShrink: 0,
+                opacity: (stepSubmitting || !docLink.trim()) ? 0.5 : 1,
+              }}
+            >
+              {stepSubmitting ? "Submitting..." : "Submit"}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── RESOURCE ──
+    if (step.type === "resource") {
+      const fieldsObj = (step.fields && typeof step.fields === "object" && !Array.isArray(step.fields)) ? step.fields as Record<string, unknown> : {};
+      const url = (typeof fieldsObj.url === "string" ? fieldsObj.url : null) || (step.description?.startsWith("http") ? step.description : null);
+
+      return (
+        <div style={{ padding: "12px 0" }}>
+          {step.description && !step.description.startsWith("http") && (
+            <div style={{ fontSize: 14, color: "#A0A0A0", lineHeight: 1.6, marginBottom: 14 }}>{step.description}</div>
+          )}
+          {url && (
+            <a href={url} target="_blank" rel="noopener noreferrer" style={{
+              display: "inline-block", background: `${accent}15`, border: `1px solid ${accent}30`,
+              color: accent, fontWeight: 600, padding: "10px 22px", borderRadius: 9,
+              textDecoration: "none", fontSize: 14,
+            }}>
+              Open Resource {"\u2197"}
+            </a>
+          )}
+          <div style={{ marginTop: 10, fontSize: 12, color: "#505050" }}>
+            {step.completed ? "Viewed" : "Auto-completing..."}
+          </div>
+        </div>
+      );
+    }
+
+    // Fallback
+    return (
+      <div style={{ padding: "12px 0", fontSize: 13, color: "#606060" }}>
+        {isCompleted ? "This step has been completed." : "Interact with this step through your program."}
+      </div>
+    );
+  }
 
   // ── Loading ──
   if (loading) {
@@ -179,7 +735,7 @@ export default function PortalPage() {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0F0F0F" }}>
         <div style={{ textAlign: "center", maxWidth: 420, padding: "0 24px" }}>
-          <div style={{ fontSize: 28, marginBottom: 16 }}>🔍</div>
+          <div style={{ fontSize: 28, marginBottom: 16 }}>{"\u{1F50D}"}</div>
           <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8, color: "#F0F0F0" }}>No portal found</h2>
           <p style={{ color: "#A0A0A0", marginBottom: 28, lineHeight: 1.6, fontSize: 14 }}>
             Your account doesn&apos;t have a client record yet. Make sure you&apos;re signing in with the same email your invitation was sent to.
@@ -194,17 +750,11 @@ export default function PortalPage() {
   }
 
   const TABS = [
-    { id: "home" as const,      label: "Home",      icon: "⌂" },
-    { id: "documents" as const, label: `Documents${pendingDocs > 0 ? ` (${pendingDocs})` : ""}`, icon: "📎" },
-    { id: "updates" as const,   label: "Updates",    icon: "📊" },
-    { id: "resources" as const, label: "Resources",  icon: "📁" },
+    { id: "home" as const,      label: "Home",      icon: "\u2302" },
+    { id: "documents" as const, label: `Documents${pendingDocs > 0 ? ` (${pendingDocs})` : ""}`, icon: "\u{1F4CE}" },
+    { id: "updates" as const,   label: "Updates",    icon: "\u{1F4CA}" },
+    { id: "resources" as const, label: "Resources",  icon: "\u{1F4C1}" },
   ];
-
-  const textareaStyle: React.CSSProperties = {
-    width: "100%", background: "#1A1A1A", border: "1px solid #2A2A2A", color: "#F0F0F0",
-    borderRadius: 10, padding: "12px 16px", fontSize: 14, outline: "none", resize: "vertical",
-    boxSizing: "border-box", lineHeight: 1.5,
-  };
 
   return (
     <div style={{ minHeight: "100vh", background: "#0F0F0F", fontFamily: "system-ui, -apple-system, sans-serif" }}>
@@ -257,7 +807,7 @@ export default function PortalPage() {
                 Welcome back, <span style={{ fontWeight: 600 }}>{client.firstName}</span>
               </h1>
               {program && (
-                <p style={{ color: "#606060", margin: "0 0 16px", fontSize: 14 }}>{program.name}{program.duration ? ` · ${program.duration}` : ""}</p>
+                <p style={{ color: "#606060", margin: "0 0 16px", fontSize: 14 }}>{program.name}{program.duration ? ` \u00B7 ${program.duration}` : ""}</p>
               )}
 
               {/* Progress bar */}
@@ -278,7 +828,7 @@ export default function PortalPage() {
             </div>
 
             {/* Next Step Card */}
-            {nextStep && (
+            {currentStep && !allComplete && (
               <div style={{
                 background: "#161616", border: `2px solid ${accent}40`, borderRadius: 16,
                 padding: isMobile ? 16 : 24, marginBottom: isMobile ? 16 : 24, position: "relative", overflow: "hidden",
@@ -292,48 +842,52 @@ export default function PortalPage() {
                     width: isMobile ? 40 : 48, height: isMobile ? 40 : 48, borderRadius: isMobile ? 12 : 14, background: `${accent}15`, border: `1px solid ${accent}30`,
                     display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 20 : 24, flexShrink: 0,
                   }}>
-                    {STEP_ICON[nextStep.type] ?? "📌"}
+                    {STEP_ICON[currentStep.type] ?? "\u{1F4CC}"}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: "#505050", marginBottom: 4 }}>Step {nextStep.position} of {steps.length}</div>
-                    <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 600, color: "#F0F0F0", marginBottom: 4 }}>{nextStep.title}</div>
-                    {nextStep.description && <div style={{ fontSize: isMobile ? 13 : 14, color: "#A0A0A0", lineHeight: 1.5, marginBottom: 14 }}>{nextStep.description}</div>}
+                    <div style={{ fontSize: 11, color: "#505050", marginBottom: 4 }}>Step {currentStep.position} of {progressSteps.length}</div>
+                    <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 600, color: "#F0F0F0", marginBottom: 4 }}>{currentStep.title}</div>
+                    {currentStep.description && <div style={{ fontSize: isMobile ? 13 : 14, color: "#A0A0A0", lineHeight: 1.5, marginBottom: 14 }}>{currentStep.description}</div>}
                     <button
                       onClick={() => {
-                        if (nextStep.type === "task" || nextStep.type === "intake_form" || nextStep.type === "agreement") {
-                          const matchingTask = tasks.find(t => t.title === nextStep.title && t.status !== "complete");
-                          if (matchingTask) completeTask(matchingTask.id);
-                        } else if (nextStep.type === "document") {
-                          setActiveTab("documents");
-                        } else if (nextStep.type === "checkin") {
-                          setActiveTab("updates");
-                        } else if (nextStep.type === "resource") {
-                          setActiveTab("resources");
+                        // Simple types: complete inline
+                        if (currentStep.type === "task") {
+                          completeStep(currentStep.id, {});
+                        } else if (currentStep.type === "resource") {
+                          // Resource auto-completes, just open the URL
+                          const fieldsObj = (currentStep.fields && typeof currentStep.fields === "object" && !Array.isArray(currentStep.fields)) ? currentStep.fields as Record<string, unknown> : {};
+                          const url = (typeof fieldsObj.url === "string" ? fieldsObj.url : null) || (currentStep.description?.startsWith("http") ? currentStep.description : null);
+                          if (url) window.open(url, "_blank");
+                        } else {
+                          // Complex types: scroll to journey section and expand
+                          setExpandedStepId(currentStep.id);
+                          scrollToJourney();
                         }
                       }}
-                      disabled={completingId !== null}
+                      disabled={stepSubmitting}
                       style={{
                         background: accent, color: "#0F0F0F", fontWeight: 600,
                         padding: isMobile ? "12px 20px" : "11px 24px", borderRadius: 9, border: "none", cursor: "pointer",
-                        fontSize: 14, opacity: completingId ? 0.7 : 1, transition: "opacity 0.15s",
+                        fontSize: 14, opacity: stepSubmitting ? 0.7 : 1, transition: "opacity 0.15s",
                         width: isMobile ? "100%" : "auto",
                       }}
                     >
-                      {completingId ? "Processing..." : (STEP_ACTION[nextStep.type] ?? "Continue")}
+                      {stepSubmitting && stepCompleted !== currentStep.id ? "Processing..." : (STEP_ACTION[currentStep.type] ?? "Continue")}
                     </button>
                   </div>
                 </div>
               </div>
             )}
 
-            {!nextStep && steps.length > 0 && (
+            {/* All Complete Celebration */}
+            {allComplete && progressSteps.length > 0 && (
               <div style={{
                 background: "#161616", border: `2px solid ${accent}40`, borderRadius: 16,
                 padding: "32px 24px", marginBottom: 24, textAlign: "center",
               }}>
-                <div style={{ fontSize: 36, marginBottom: 12 }}>🎉</div>
-                <div style={{ fontSize: 20, fontWeight: 600, color: "#F0F0F0", marginBottom: 6 }}>All steps completed!</div>
-                <div style={{ color: "#A0A0A0", fontSize: 14 }}>Great work. Your account manager has been notified.</div>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>{"\u{1F389}"}</div>
+                <div style={{ fontSize: 20, fontWeight: 600, color: "#F0F0F0", marginBottom: 6 }}>You&apos;ve completed your onboarding!</div>
+                <div style={{ color: "#A0A0A0", fontSize: 14 }}>Your account manager has been notified.</div>
               </div>
             )}
 
@@ -360,15 +914,17 @@ export default function PortalPage() {
             </div>
 
             {/* Journey Timeline */}
-            {steps.length > 0 && (
-              <div style={{ marginBottom: 24 }}>
+            {progressSteps.length > 0 && (
+              <div ref={journeyRef} style={{ marginBottom: 24 }}>
                 <div style={{ fontWeight: 600, fontSize: 15, color: "#F0F0F0", marginBottom: 16 }}>Your Onboarding Journey</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                  {steps.map((step, i) => {
-                    const isDone = completedStepPositions.has(step.position);
-                    const isCurrent = !isDone && nextStep?.id === step.id;
+                  {progressSteps.map((step, i) => {
+                    const isDone = step.completed;
+                    const isCurrent = !isDone && currentStep?.id === step.id;
                     const isUpcoming = !isDone && !isCurrent;
-                    const matchingTask = tasks.find(t => t.title === step.title && t.status === "complete");
+                    const isExpanded = expandedStepId === step.id;
+                    const canExpand = isDone || isCurrent;
+
                     return (
                       <div key={step.id} style={{ display: "flex", gap: 0 }}>
                         {/* Timeline column */}
@@ -382,43 +938,75 @@ export default function PortalPage() {
                             transition: "all 0.3s",
                           }}>
                             {isDone ? (
-                              <span style={{ color: "#0F0F0F", fontSize: 14, fontWeight: 900 }}>✓</span>
+                              <span style={{ color: "#0F0F0F", fontSize: 14, fontWeight: 900 }}>{"\u2713"}</span>
                             ) : isCurrent ? (
                               <div style={{ width: 10, height: 10, borderRadius: "50%", background: accent }} />
                             ) : (
                               <span style={{ color: "#3A3A3A", fontSize: 11, fontWeight: 700 }}>{step.position}</span>
                             )}
                           </div>
-                          {i < steps.length - 1 && (
+                          {i < progressSteps.length - 1 && (
                             <div style={{ width: 2, flex: 1, background: isDone ? `${accent}40` : "#2A2A2A", minHeight: 20 }} />
                           )}
                         </div>
 
                         {/* Step content */}
                         <div style={{
-                          flex: 1, marginLeft: 10, marginBottom: 8, padding: "10px 16px",
-                          borderRadius: 10, background: isCurrent ? "#161616" : "transparent",
-                          border: isCurrent ? `1px solid ${accent}30` : "1px solid transparent",
-                          opacity: isUpcoming ? 0.5 : 1, transition: "opacity 0.2s",
+                          flex: 1, marginLeft: 10, marginBottom: 8, padding: isExpanded ? "14px 18px" : "10px 16px",
+                          borderRadius: 10,
+                          background: isExpanded ? "#161616" : isCurrent ? "#161616" : "transparent",
+                          border: isExpanded ? `1px solid ${accent}30` : isCurrent ? `1px solid ${accent}30` : "1px solid transparent",
+                          opacity: isUpcoming ? 0.5 : 1, transition: "all 0.2s",
+                          cursor: canExpand ? "pointer" : "default",
                         }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                            <span style={{ fontSize: 15 }}>{STEP_ICON[step.type] ?? "📌"}</span>
-                            <span style={{ fontSize: 14, fontWeight: 500, color: isDone ? "#606060" : "#F0F0F0", textDecoration: isDone ? "line-through" : "none" }}>
-                              {step.title}
-                            </span>
-                          </div>
-                          {step.description && !isUpcoming && (
-                            <div style={{ fontSize: 12, color: "#606060", marginTop: 2, marginLeft: 23 }}>{step.description}</div>
-                          )}
-                          <div style={{ fontSize: 11, color: "#505050", marginTop: 4, marginLeft: 23 }}>
-                            {isDone ? (
-                              <span style={{ color: accent }}>Completed{matchingTask?.completedAt ? ` ${daysAgo(matchingTask.completedAt)}` : ""}</span>
-                            ) : isCurrent ? (
-                              <span style={{ color: accent }}>In Progress</span>
-                            ) : (
-                              <span>Upcoming</span>
+                          <div
+                            onClick={() => {
+                              if (!canExpand) return;
+                              setExpandedStepId(isExpanded ? null : step.id);
+                              // Reset form state on collapse/switch
+                              setFormValues({});
+                              setFormErrors({});
+                              setAgreeName("");
+                              setAgreeCheck(false);
+                              setDocLink("");
+                              setCheckinCompleted("");
+                              setCheckinStuck("");
+                              setCheckinConfidence(7);
+                              setCheckinNextAction("");
+                            }}
+                            style={{ cursor: canExpand ? "pointer" : "default" }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                              <span style={{ fontSize: 15 }}>{STEP_ICON[step.type] ?? "\u{1F4CC}"}</span>
+                              <span style={{ fontSize: 14, fontWeight: 500, color: isDone ? "#606060" : "#F0F0F0", textDecoration: isDone ? "line-through" : "none", flex: 1 }}>
+                                {step.title}
+                              </span>
+                              {canExpand && (
+                                <span style={{ fontSize: 11, color: "#505050", transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
+                                  {"\u25BC"}
+                                </span>
+                              )}
+                            </div>
+                            {step.description && !isUpcoming && !isExpanded && (
+                              <div style={{ fontSize: 12, color: "#606060", marginTop: 2, marginLeft: 23 }}>{step.description}</div>
                             )}
+                            <div style={{ fontSize: 11, color: "#505050", marginTop: 4, marginLeft: 23 }}>
+                              {isDone ? (
+                                <span style={{ color: accent }}>Completed{step.completedAt ? ` ${daysAgo(step.completedAt)}` : ""}</span>
+                              ) : isCurrent ? (
+                                <span style={{ color: accent }}>In Progress</span>
+                              ) : (
+                                <span>Upcoming</span>
+                              )}
+                            </div>
                           </div>
+
+                          {/* Expanded form content */}
+                          {isExpanded && canExpand && (
+                            <div style={{ marginTop: 12, borderTop: "1px solid #2A2A2A", paddingTop: 12 }}>
+                              {renderStepForm(step)}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -434,7 +1022,7 @@ export default function PortalPage() {
                 <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 16 }}>
                   {tasks.filter(t => t.status === "complete").slice(-3).reverse().map(t => (
                     <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #1E1E1E" }}>
-                      <span style={{ color: accent, fontSize: 12 }}>✓</span>
+                      <span style={{ color: accent, fontSize: 12 }}>{"\u2713"}</span>
                       <span style={{ fontSize: 13, color: "#A0A0A0", flex: 1 }}>Completed: {t.title}</span>
                       {t.completedAt && <span style={{ fontSize: 11, color: "#505050" }}>{daysAgo(t.completedAt)}</span>}
                     </div>
@@ -451,7 +1039,7 @@ export default function PortalPage() {
             <h2 style={{ fontSize: 20, fontWeight: 400, color: "#F0F0F0", marginBottom: 20 }}>Documents</h2>
             {docs.length === 0 ? (
               <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 48, textAlign: "center" }}>
-                <div style={{ fontSize: 28, marginBottom: 10 }}>📄</div>
+                <div style={{ fontSize: 28, marginBottom: 10 }}>{"\u{1F4C4}"}</div>
                 <div style={{ fontWeight: 500, color: "#F0F0F0", marginBottom: 4 }}>No documents requested yet</div>
                 <div style={{ color: "#606060", fontSize: 13 }}>Your account manager will request documents when needed.</div>
               </div>
@@ -468,11 +1056,11 @@ export default function PortalPage() {
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           {isDone ? (
                             <div style={{ width: 28, height: 28, borderRadius: "50%", background: accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                              <span style={{ color: "#0F0F0F", fontSize: 14, fontWeight: 900 }}>✓</span>
+                              <span style={{ color: "#0F0F0F", fontSize: 14, fontWeight: 900 }}>{"\u2713"}</span>
                             </div>
                           ) : (
                             <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#1E1E1E", border: "2px solid #3A3A3A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                              <span style={{ fontSize: 13 }}>📎</span>
+                              <span style={{ fontSize: 13 }}>{"\u{1F4CE}"}</span>
                             </div>
                           )}
                           <div>
@@ -531,7 +1119,7 @@ export default function PortalPage() {
 
             {submitted ? (
               <div style={{ background: "#161616", border: `1px solid ${accent}30`, borderRadius: 14, padding: "40px 24px", textAlign: "center", marginBottom: 24 }}>
-                <div style={{ fontSize: 36, marginBottom: 12 }}>🎉</div>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>{"\u{1F389}"}</div>
                 <div style={{ fontSize: 18, fontWeight: 600, color: "#F0F0F0", marginBottom: 6 }}>Update submitted!</div>
                 <div style={{ color: "#A0A0A0", fontSize: 14, marginBottom: 20 }}>Your account manager has been notified.</div>
                 <button onClick={() => setSubmitted(false)} style={{
@@ -613,30 +1201,34 @@ export default function PortalPage() {
             <h2 style={{ fontSize: 20, fontWeight: 400, color: "#F0F0F0", marginBottom: 20 }}>Resources</h2>
             {resourceSteps.length === 0 ? (
               <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 48, textAlign: "center" }}>
-                <div style={{ fontSize: 28, marginBottom: 10 }}>📁</div>
+                <div style={{ fontSize: 28, marginBottom: 10 }}>{"\u{1F4C1}"}</div>
                 <div style={{ fontWeight: 500, color: "#F0F0F0", marginBottom: 4 }}>No resources yet</div>
                 <div style={{ color: "#606060", fontSize: 13 }}>Resources will appear here as they are added to your program.</div>
               </div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
-                {resourceSteps.map(step => (
-                  <div key={step.id} style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 14, padding: isMobile ? 16 : 22 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                      <span style={{ fontSize: 22 }}>📁</span>
-                      <div style={{ fontWeight: 500, fontSize: 15, color: "#F0F0F0" }}>{step.title}</div>
+                {resourceSteps.map(step => {
+                  const fieldsObj = (step.fields && typeof step.fields === "object" && !Array.isArray(step.fields)) ? step.fields as Record<string, unknown> : {};
+                  const url = (typeof fieldsObj.url === "string" ? fieldsObj.url : null) || (step.description?.startsWith("http") ? step.description : null);
+                  return (
+                    <div key={step.id} style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 14, padding: isMobile ? 16 : 22 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                        <span style={{ fontSize: 22 }}>{"\u{1F4C1}"}</span>
+                        <div style={{ fontWeight: 500, fontSize: 15, color: "#F0F0F0" }}>{step.title}</div>
+                      </div>
+                      {step.description && !step.description.startsWith("http") && (
+                        <div style={{ fontSize: 13, color: "#A0A0A0", lineHeight: 1.5, marginBottom: 14 }}>{step.description}</div>
+                      )}
+                      {url && (
+                        <a href={url} target="_blank" rel="noopener noreferrer" style={{
+                          display: "inline-block", background: `${accent}15`, border: `1px solid ${accent}30`,
+                          color: accent, fontWeight: 600, padding: "8px 18px", borderRadius: 8,
+                          textDecoration: "none", fontSize: 13,
+                        }}>View Resource</a>
+                      )}
                     </div>
-                    {step.description && (
-                      <div style={{ fontSize: 13, color: "#A0A0A0", lineHeight: 1.5, marginBottom: 14 }}>{step.description}</div>
-                    )}
-                    {step.description && step.description.startsWith("http") && (
-                      <a href={step.description} target="_blank" rel="noopener noreferrer" style={{
-                        display: "inline-block", background: `${accent}15`, border: `1px solid ${accent}30`,
-                        color: accent, fontWeight: 600, padding: "8px 18px", borderRadius: 8,
-                        textDecoration: "none", fontSize: 13,
-                      }}>View Resource</a>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -678,7 +1270,7 @@ export default function PortalPage() {
         {ws?.supportEmail && (
           <div style={{ marginBottom: 6 }}><a href={`mailto:${ws.supportEmail}`} style={{ color: "#505050", textDecoration: "none" }}>{ws.supportEmail}</a></div>
         )}
-        {!ws?.hideBranding && <span>Powered by <span style={{ color: "#505050", fontWeight: 600 }}>ClientFlow</span> · </span>}
+        {!ws?.hideBranding && <span>Powered by <span style={{ color: "#505050", fontWeight: 600 }}>ClientFlow</span> {"\u00B7"} </span>}
         <span>&copy; {new Date().getFullYear()}</span>
       </footer>
       )}

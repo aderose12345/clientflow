@@ -12,7 +12,7 @@ const FEATURES = [
   "Unlimited clients",
   "Unlimited programs",
   "Client portal with branding",
-  "Check-in templates",
+  "Progress update templates",
   "Full automation suite",
   "Intake forms & agreements",
   "Task & milestone tracking",
@@ -116,7 +116,7 @@ function BillingContent() {
             Upgrade to <span style={{ color: "#C8F04A", fontWeight: 600 }}>ClientFlow Pro</span>
           </h1>
           <p style={{ color: "#A0A0A0", fontSize: 16, margin: 0, lineHeight: 1.5 }}>
-            Everything you need to run your coaching business.
+            Everything you need to run your business.
           </p>
           {!loading && workspace && (
             <div style={{ marginTop: 14 }}>

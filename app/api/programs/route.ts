@@ -15,6 +15,10 @@ export async function GET() {
 
   const programs = await prisma.program.findMany({
     where: { workspaceId: workspace.id },
+    include: {
+      steps: { orderBy: { position: "asc" } },
+      _count: { select: { clients: true } },
+    },
     orderBy: { createdAt: "desc" },
   });
 

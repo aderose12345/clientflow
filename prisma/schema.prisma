@@ -13,10 +13,15 @@ model Workspace {
   businessName         String
   logoUrl              String?
   brandColor           String   @default("#C8F04A")
-  businessType         String   @default("coach")
+  businessType         String   @default("other")
   subscriptionStatus   String   @default("trial")
   stripeCustomerId     String?
   stripeSubscriptionId String?
+  hideBranding         Boolean  @default(false)
+  portalWelcomeMessage String?
+  portalPrimaryColor   String?
+  supportEmail         String?
+  ownerEmail           String?
   createdAt            DateTime @default(now())
   clients              Client[]
   programs             Program[]
@@ -33,6 +38,8 @@ model Client {
   lastName             String
   email                String
   phone                String?
+  companyName          String?
+  assignedTo           String?
   status               String    @default("on_track")
   programId            String?
   program              Program?  @relation(fields: [programId], references: [id])
@@ -47,6 +54,8 @@ model Client {
   checkInSubmissions   CheckInSubmission[]
   activityEvents       ActivityEvent[]
   notes                Note[]
+  documentRequests     DocumentRequest[]
+  stepCompletions      StepCompletion[]
 }
 
 model Program {
@@ -73,6 +82,8 @@ model ProgramStep {
   title       String
   description String?
   position    Int
+  fields      Json?
+  completions StepCompletion[]
 }
 
 model IntakeForm {
@@ -98,10 +109,11 @@ model IntakeFormField {
 
 model FormSubmission {
   id          String          @id @default(cuid())
-  formId      String
-  form        IntakeForm      @relation(fields: [formId], references: [id])
+  formId      String?
+  form        IntakeForm?     @relation(fields: [formId], references: [id])
   clientId    String
   client      Client          @relation(fields: [clientId], references: [id])
+  stepId      String?
   submittedAt DateTime        @default(now())
   answers     FormAnswer[]
 }
@@ -110,8 +122,8 @@ model FormAnswer {
   id           String         @id @default(cuid())
   submissionId String
   submission   FormSubmission @relation(fields: [submissionId], references: [id])
-  fieldId      String
-  field        IntakeFormField @relation(fields: [fieldId], references: [id])
+  fieldId      String?
+  field        IntakeFormField? @relation(fields: [fieldId], references: [id])
   value        String
 }
 
@@ -127,10 +139,11 @@ model Agreement {
 
 model AgreementAcceptance {
   id          String    @id @default(cuid())
-  agreementId String
-  agreement   Agreement @relation(fields: [agreementId], references: [id])
+  agreementId String?
+  agreement   Agreement? @relation(fields: [agreementId], references: [id])
   clientId    String
   client      Client    @relation(fields: [clientId], references: [id])
+  stepId      String?
   fullName    String
   acceptedAt  DateTime  @default(now())
 }
@@ -184,10 +197,11 @@ model CheckInTemplate {
 
 model CheckInSubmission {
   id          String          @id @default(cuid())
-  templateId  String
-  template    CheckInTemplate @relation(fields: [templateId], references: [id])
+  templateId  String?
+  template    CheckInTemplate? @relation(fields: [templateId], references: [id])
   clientId    String
   client      Client          @relation(fields: [clientId], references: [id])
+  stepId      String?
   answers     String
   submittedAt DateTime        @default(now())
 }
@@ -223,4 +237,30 @@ model Note {
   authorUserId String
   content      String
   createdAt    DateTime  @default(now())
+}
+
+model DocumentRequest {
+  id          String    @id @default(cuid())
+  workspaceId String
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id])
+  title       String
+  description String?
+  required    Boolean   @default(true)
+  status      String    @default("pending")
+  fileUrl     String?
+  fileName    String?
+  requestedAt DateTime  @default(now())
+  uploadedAt  DateTime?
+}
+
+model StepCompletion {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id])
+  stepId    String
+  step      ProgramStep @relation(fields: [stepId], references: [id])
+  data      Json?
+  completedAt DateTime @default(now())
+  @@unique([clientId, stepId])
 }
