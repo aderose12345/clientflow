@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createClerkClient } from "@clerk/nextjs/server";
+import { clerkClient } from "@clerk/nextjs/server";
 import { logActivity } from "@/lib/activity";
-
-const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -17,26 +15,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
   }
 
-  const client = await prisma.client.findUnique({
+  const foundClient = await prisma.client.findUnique({
     where: { inviteToken: token },
     include: { workspace: true },
   });
 
-  if (!client) return NextResponse.json({ error: "Invalid invite token" }, { status: 404 });
-  if (client.inviteAccepted) return NextResponse.json({ error: "Invite already accepted" }, { status: 410 });
+  if (!foundClient) return NextResponse.json({ error: "Invalid invite token" }, { status: 404 });
+  if (foundClient.inviteAccepted) return NextResponse.json({ error: "Invite already accepted" }, { status: 410 });
+
+  const clerk = await clerkClient();
 
   try {
     // Create Clerk user with the client's email and password
     const clerkUser = await clerk.users.createUser({
-      emailAddress: [client.email],
+      emailAddress: [foundClient.email],
       password,
-      firstName: client.firstName,
-      lastName: client.lastName,
+      firstName: foundClient.firstName,
+      lastName: foundClient.lastName,
     });
 
     // Mark invite as accepted and link Clerk user ID
     await prisma.client.update({
-      where: { id: client.id },
+      where: { id: foundClient.id },
       data: {
         inviteAccepted: true,
         inviteAcceptedAt: new Date(),
@@ -46,52 +46,63 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Log activity
-    await logActivity(client.workspace.id, client.id, "invite_accepted", {
-      email: client.email,
+    await logActivity(foundClient.workspace.id, foundClient.id, "invite_accepted", {
+      email: foundClient.email,
     });
 
     return NextResponse.json({
       success: true,
       clerkUserId: clerkUser.id,
-      redirectUrl: "/portal",
+      redirectUrl: "/sign-in",
     });
   } catch (err: unknown) {
-    console.error("[invite/accept] Error creating Clerk user:", err);
+    console.error("[invite/accept] Clerk createUser error:", JSON.stringify(err, null, 2));
 
-    // Handle Clerk errors (e.g. email already exists)
-    const message = err instanceof Error ? err.message : "Failed to create account";
-    if (message.includes("already exists") || message.includes("taken")) {
-      // User already has a Clerk account — just mark invite as accepted
-      // Find the existing Clerk user by email
-      const existingUsers = await clerk.users.getUserList({ emailAddress: [client.email] });
-      const existingUser = existingUsers.data[0];
+    // Extract Clerk error details
+    const clerkErr = err as { errors?: Array<{ message: string; code: string }>; message?: string };
+    const errors = clerkErr.errors;
+    const firstError = errors?.[0];
+    const message = firstError?.message || clerkErr.message || "Failed to create account";
+    const code = firstError?.code || "";
 
-      if (existingUser) {
-        await prisma.client.update({
-          where: { id: client.id },
-          data: {
-            inviteAccepted: true,
-            inviteAcceptedAt: new Date(),
-            clerkUserId: existingUser.id,
-            lastActivityAt: new Date(),
-          },
-        });
+    // Handle "email already exists" — link existing Clerk user
+    if (code === "form_identifier_exists" || message.toLowerCase().includes("already") || message.toLowerCase().includes("taken")) {
+      try {
+        const existingUsers = await clerk.users.getUserList({ emailAddress: [foundClient.email] });
+        const existingUser = existingUsers.data[0];
 
-        await logActivity(client.workspace.id, client.id, "invite_accepted", {
-          email: client.email,
-          existingAccount: true,
-        });
+        if (existingUser) {
+          await prisma.client.update({
+            where: { id: foundClient.id },
+            data: {
+              inviteAccepted: true,
+              inviteAcceptedAt: new Date(),
+              clerkUserId: existingUser.id,
+              lastActivityAt: new Date(),
+            },
+          });
 
-        return NextResponse.json({
-          success: true,
-          existingAccount: true,
-          redirectUrl: "/sign-in",
-          message: "You already have an account. Please sign in.",
-        });
+          await logActivity(foundClient.workspace.id, foundClient.id, "invite_accepted", {
+            email: foundClient.email,
+            existingAccount: true,
+          });
+
+          return NextResponse.json({
+            success: true,
+            existingAccount: true,
+            redirectUrl: "/sign-in",
+            message: "You already have an account. Please sign in.",
+          });
+        }
+      } catch (lookupErr) {
+        console.error("[invite/accept] Error looking up existing user:", lookupErr);
       }
     }
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({
+      error: message,
+      code,
+      details: errors,
+    }, { status: 400 });
   }
 }
