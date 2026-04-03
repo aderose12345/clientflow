@@ -2,6 +2,7 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendAgencyNotification } from "@/lib/email";
+import { logActivity } from "@/lib/activity";
 
 export async function POST(
   req: NextRequest,
@@ -45,7 +46,7 @@ export async function POST(
         clientId: client.id,
         stepId,
         answers: {
-          create: Object.entries(body.answers as Record<string, string>).map(([key, value]) => ({
+          create: Object.entries(body.answers as Record<string, string>).map(([, value]) => ({
             value: String(value),
           })),
         },
@@ -110,6 +111,13 @@ export async function POST(
     data: { lastActivityAt: new Date() },
   });
 
+  // Log activity
+  await logActivity(client.workspace.id, client.id, `step_completed_${step.type}`, {
+    stepId: step.id,
+    stepTitle: step.title,
+    stepType: step.type,
+  });
+
   // Send agency notification
   if (client.workspace.ownerEmail) {
     sendAgencyNotification({
@@ -117,8 +125,6 @@ export async function POST(
       clientName: `${client.firstName} ${client.lastName}`,
       stepTitle: step.title,
       programName: client.program?.name ?? "Unknown Program",
-      businessName: client.workspace.businessName,
-      clientId: client.id,
     }).catch(() => {});
   }
 

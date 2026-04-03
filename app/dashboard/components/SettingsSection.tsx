@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 
 type Workspace = {
   id: string; businessName: string; businessType: string;
-  brandColor: string; subscriptionStatus: string;
+  brandColor: string; subscriptionStatus: string; logoUrl: string | null;
   hideBranding: boolean; portalWelcomeMessage: string | null;
   portalPrimaryColor: string | null; supportEmail: string | null;
 };
@@ -24,6 +24,7 @@ export default function SettingsSection() {
   const [saved, setSaved]           = useState(false);
 
   // Branding state
+  const [logoUrl, setLogoUrl]                 = useState("");
   const [hideBranding, setHideBranding]       = useState(false);
   const [welcomeMsg, setWelcomeMsg]           = useState("");
   const [portalColor, setPortalColor]         = useState("");
@@ -38,6 +39,7 @@ export default function SettingsSection() {
         setWorkspace(d.workspace);
         setName(d.workspace?.businessName ?? "");
         setType(d.workspace?.businessType ?? "marketing_agency");
+        setLogoUrl(d.workspace?.logoUrl ?? "");
         setHideBranding(d.workspace?.hideBranding ?? false);
         setWelcomeMsg(d.workspace?.portalWelcomeMessage ?? "");
         setPortalColor(d.workspace?.portalPrimaryColor ?? "");
@@ -65,7 +67,7 @@ export default function SettingsSection() {
     setBrandSaved(false);
     await fetch("/api/workspace", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hideBranding, portalWelcomeMessage: welcomeMsg, portalPrimaryColor: portalColor, supportEmail }),
+      body: JSON.stringify({ logoUrl: logoUrl || null, hideBranding, portalWelcomeMessage: welcomeMsg, portalPrimaryColor: portalColor, supportEmail }),
     });
     setBrandSaving(false);
     setBrandSaved(true);
@@ -145,6 +147,18 @@ export default function SettingsSection() {
         <div style={{ background: "#161616", border: "1px solid #2A2A2A", borderRadius: 12, padding: 24 }}>
           <div style={{ fontWeight: 600, marginBottom: 18, fontSize: 15, color: "#F0F0F0" }}>Client Portal Branding</div>
           <form onSubmit={saveBranding}>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: "#A0A0A0", display: "block", marginBottom: 6 }}>Logo URL</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {logoUrl && (
+                  <div style={{ width: 40, height: 40, borderRadius: 8, overflow: "hidden", border: "1px solid #2A2A2A", flexShrink: 0 }}>
+                    <img src={logoUrl} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                  </div>
+                )}
+                <input value={logoUrl} onChange={e => setLogoUrl(e.target.value)} placeholder="https://your-logo-url.com/logo.png" style={inp} />
+              </div>
+              <div style={{ fontSize: 11, color: "#505050", marginTop: 4 }}>Paste a URL to your logo image. Shown in client portal header and invite emails.</div>
+            </div>
             <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
               <label style={{ fontSize: 13, color: "#A0A0A0", display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                 <input type="checkbox" checked={hideBranding} onChange={e => setHideBranding(e.target.checked)} style={{ accentColor: "#C8F04A" }} />

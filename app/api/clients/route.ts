@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateWorkspace } from "@/lib/workspace";
 import { sendClientInvite } from "@/lib/email";
+import { logActivity } from "@/lib/activity";
 
 export async function GET() {
   const { userId } = await auth();
@@ -60,6 +61,11 @@ export async function POST(req: NextRequest) {
         invitedAt: new Date(),
       },
       include: { program: { select: { id: true, name: true } } },
+    });
+
+    await logActivity(workspace.id, client.id, "client_invited", {
+      email: client.email,
+      programName: client.program?.name,
     });
 
     const coachName = user?.fullName ?? coachEmail;

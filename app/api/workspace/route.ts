@@ -23,7 +23,7 @@ export async function PATCH(req: NextRequest) {
   const workspace = await getOrCreateWorkspace(userId, email);
 
   const body = await req.json();
-  const { businessName, businessType, brandColor, hideBranding, portalWelcomeMessage, portalPrimaryColor, supportEmail } = body;
+  const { businessName, businessType, brandColor, hideBranding, portalWelcomeMessage, portalPrimaryColor, supportEmail, logoUrl } = body;
 
   const updated = await prisma.workspace.update({
     where: { id: workspace.id },
@@ -35,6 +35,7 @@ export async function PATCH(req: NextRequest) {
       ...(portalWelcomeMessage !== undefined && { portalWelcomeMessage: portalWelcomeMessage?.trim() || null }),
       ...(portalPrimaryColor  !== undefined && { portalPrimaryColor: portalPrimaryColor || null }),
       ...(supportEmail        !== undefined && { supportEmail: supportEmail?.trim() || null }),
+      ...(logoUrl             !== undefined && { logoUrl: logoUrl || null }),
     },
   });
 

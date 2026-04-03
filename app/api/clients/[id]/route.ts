@@ -15,13 +15,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const client = await prisma.client.findFirst({
     where: { id, workspaceId: workspace.id },
     include: {
-      program: true,
+      program: { include: { steps: { orderBy: { position: "asc" } } } },
       tasks: { orderBy: { createdAt: "desc" } },
+      stepCompletions: { include: { step: true }, orderBy: { completedAt: "asc" } },
       checkInSubmissions: {
         include: { template: { select: { name: true } } },
         orderBy: { submittedAt: "desc" },
-        take: 10,
       },
+      formSubmissions: { include: { answers: true } },
+      agreementAcceptances: true,
       milestoneCompletions: {
         include: { milestone: { select: { title: true } } },
         orderBy: { completedAt: "desc" },

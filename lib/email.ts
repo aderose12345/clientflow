@@ -71,15 +71,11 @@ export async function sendAgencyNotification({
   clientName,
   stepTitle,
   programName,
-  businessName,
-  clientId,
 }: {
   toEmail: string;
   clientName: string;
   stepTitle: string;
   programName: string;
-  businessName: string;
-  clientId: string;
 }) {
   if (!process.env.RESEND_API_KEY) return;
 
