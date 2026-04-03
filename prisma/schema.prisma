@@ -8,18 +8,21 @@ datasource db {
 }
 
 model Workspace {
-  id                 String   @id @default(cuid())
-  businessName       String
-  logoUrl            String?
-  brandColor         String   @default("#C8F04A")
-  businessType       String   @default("coach")
-  subscriptionStatus String   @default("trial")
-  createdAt          DateTime @default(now())
-  clients            Client[]
-  programs           Program[]
-  automationRules    AutomationRule[]
-  activityEvents     ActivityEvent[]
-  notes              Note[]
+  id                   String   @id @default(cuid())
+  clerkUserId          String   @unique
+  businessName         String
+  logoUrl              String?
+  brandColor           String   @default("#C8F04A")
+  businessType         String   @default("coach")
+  subscriptionStatus   String   @default("trial")
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  createdAt            DateTime @default(now())
+  clients              Client[]
+  programs             Program[]
+  automationRules      AutomationRule[]
+  activityEvents       ActivityEvent[]
+  notes                Note[]
 }
 
 model Client {
@@ -37,6 +40,7 @@ model Client {
   lastActivityAt       DateTime?
   createdAt            DateTime  @default(now())
   tasks                Task[]
+  @@unique([workspaceId, email])
   formSubmissions      FormSubmission[]
   agreementAcceptances AgreementAcceptance[]
   milestoneCompletions MilestoneCompletion[]

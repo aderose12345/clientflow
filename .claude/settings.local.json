@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma:*)",
+      "Bash(npm run:*)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(echo \"Started PID: $!\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/dashboard)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/portal)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/billing)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/sign-in)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/api/programs)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -L http://localhost:3002/dashboard)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}
